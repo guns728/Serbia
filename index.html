@@ -777,20 +777,20 @@
             },
 
             startBGM() {
-                // 这里的链接是你提供的网易云音乐直链
+                // 的网易云直链
                 const bgmUrl = "https://m701.music.126.net/20251209000142/19882356db16af003a035a3bb243e303/jdymusic/obj/wo3DlMOGwrbDjj7DisKw/34566764345/adfd/3475/61d6/83d96809a2f866d5383868fb26a68a51.mp3";
                 
                 this.bgm = new Audio(bgmUrl);
                 this.bgm.loop = true;  // 设置循环播放
-                this.bgm.volume = 0.2; // 设置音量 (0.0 - 1.0)，建议 0.3-0.5 之间
+                this.bgm.volume = 0.5; // 设置音量 (0.0 - 1.0)
                 
-                // 尝试播放 (浏览器策略要求必须先有点击交互才能播放声音)
+                // 尝试播放 
                 this.bgm.play().catch(error => {
                     console.warn("BGM播放被阻止，等待用户点击:", error);
                 });
             },
 
-            // --- SFX 音效 (保持不变) ---
+            // --- SFX 音效 ---
             playType() {
                 if(!this.ctx) return;
                 const osc = this.ctx.createOscillator();
@@ -865,4 +865,5 @@
 
     </script>
 </body>
+
 </html>
