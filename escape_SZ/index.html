@@ -506,9 +506,12 @@ function renderRaidUI() {
             
             <div class="raid-log-box" id="raid-log"></div>
             
-            <div style="background:#000; padding:10px; border:1px solid #333; margin-bottom:10px;">
-                <div style="color:#aaa; font-size:0.8rem">临时背包 (死亡掉落):</div>
-                <div id="raid-bag-preview" style="display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; max-height:60px; overflow:hidden;"></div>
+            <div style="background:rgba(0,0,0,0.3); padding:10px; border:1px solid var(--border); margin-bottom:10px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8rem; color:var(--text-dim); border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:5px;">
+                    <span>临时背包 (死亡掉落)</span>
+                    <span>预估价值: <span id="raid-bag-val" style="color:var(--r-5); font-weight:bold; font-family:var(--font-code)">0</span> CR</span>
+                </div>
+                <div id="raid-bag-preview" style="display:flex; flex-wrap:wrap; gap:5px; margin-top:8px; max-height:60px; overflow:hidden;"></div>
             </div>
 
             <div class="btn-group">
@@ -534,9 +537,20 @@ function updateRaidLog() {
 
 function updateRaidBag() {
     const el = document.getElementById('raid-bag-preview');
+    const valEl = document.getElementById('raid-bag-val');
+    
     if(!el) return;
-    if(Game.raid.loot.length === 0) el.innerHTML = '<span style="color:#444">空</span>';
-    else el.innerHTML = Game.raid.loot.map(i => `<span class="c-${i.r}" style="font-size:0.8rem">[${i.name}]</span>`).join('');
+    
+    // 计算当前背包总价值
+    const totalVal = Game.raid.loot.reduce((sum, item) => sum + item.price, 0);
+    if(valEl) valEl.innerText = totalVal.toLocaleString();
+
+    if(Game.raid.loot.length === 0) {
+        el.innerHTML = '<span style="color:#444; font-size:0.8rem">背包空置</span>';
+    } else {
+        // 倒序显示，让新获得的物品排在前面
+        el.innerHTML = [...Game.raid.loot].reverse().map(i => `<span class="c-${i.r}" style="font-size:0.8rem; border:1px solid rgba(255,255,255,0.1); padding:0 4px; background:rgba(0,0,0,0.3)">${i.name}</span>`).join('');
+    }
 }
 
 function addLog(msg) {
@@ -722,7 +736,7 @@ function finalizeExtract() {
         
         // 弹窗
         showModal(
-            '<span style="color:var(--r-2)">撤离成功</span>', 
+            '撤离成功', 
             `安全返回基地。<br><br>
              带回物资: <b>${count}</b> 件<br>
              预估总价: <b class="c-5">${totalVal} CR</b>`
