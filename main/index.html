@@ -209,6 +209,106 @@
             position: fixed; top: 60px; right: 20px; background: rgba(0,0,0,0.8); border-left: 4px solid var(--ark-orange);
             padding: 15px 25px; color: #fff; transform: translateX(120%); transition: transform 0.3s var(--ease-ark); z-index: 300;
         }
+        /* =========================================
+           移动端 & 平板适配补丁 (RESPONSIVE PATCH)
+           ========================================= */
+        
+        @media screen and (max-width: 1024px) {
+            /* 1. 移除平板/手机上的3D透视效果，保证文字清晰且易于点击 */
+            body { perspective: none; overflow: hidden; }
+            #main-layer { transform: none !important; width: 100%; height: 100%; }
+            #bg-grid { transform: scale(1.5) !important; } /* 保持背景但不随鼠标动 */
+            
+            /* 2. 调整顶部 HUD 位置，避免重叠 */
+            .hud-tl { top: 35px; left: 10px; font-size: 0.6rem; }
+            .hud-tr { top: 35px; right: 10px; font-size: 0.6rem; }
+            /* 手机屏幕较小，隐藏底部的 HUD 装饰以腾出空间给文本 */
+            .hud-bl, .hud-br { display: none; } 
+
+            /* 3. 状态栏 (Status Bar) 重新布局 */
+            .status-bar {
+                top: 70px; /* 让出顶部新闻条和HUD的空间 */
+                left: 5%; width: 90%;
+                flex-direction: column; /* 竖向排列 */
+                align-items: flex-start;
+                padding-bottom: 5px;
+                border-bottom: 1px solid rgba(255,255,255,0.1);
+            }
+
+            /* 缩小标题，或者在极小屏幕隐藏副标题 */
+            .sys-title h1 { font-size: 2rem; }
+            .sys-title span { font-size: 0.6rem; letter-spacing: 2px; }
+
+            /* 数据网格调整 */
+            .stats-grid {
+                width: 100%;
+                margin-top: 10px;
+                justify-content: space-between;
+                gap: 10px;
+            }
+            .stat-item { font-size: 0.75rem; }
+            
+            /* 背包按钮变大，方便手指点击 */
+            #bag-btn {
+                margin-left: 0;
+                padding: 8px 15px;
+                font-size: 0.8rem;
+                align-self: flex-end; /* 放在右侧 */
+            }
+
+            /* 4. 对话框卡片 (Dialog Card) */
+            #dialog-card {
+                width: 95%; /* 几乎占满宽度 */
+                bottom: 10px; /* 贴近底部 */
+                height: 55vh; /* 占据屏幕高度的55% */
+                padding: 20px;
+                transform: none !important; /* 移除3D位移 */
+            }
+
+            /* 文本区域 */
+            #text-area {
+                font-size: 1rem; /*稍微调小字体适应小屏*/
+                margin-bottom: 15px;
+            }
+
+            /* 5. 选项按钮 (Choices) */
+            #choices-area {
+                width: 100%;
+                justify-content: stretch; /* 拉伸 */
+                flex-direction: column; /* 竖向排列按钮 */
+                gap: 8px;
+            }
+
+            .choice-btn {
+                width: 100%; /* 按钮全宽 */
+                min-width: auto;
+                padding: 15px; /* 增加点击区域 */
+                font-size: 1rem;
+                text-align: left; /* 文字居左更符合阅读习惯 */
+                /* 增加触摸反馈效果 */
+                background: rgba(255,255,255,0.08); 
+            }
+            .choice-btn:active {
+                background: var(--ark-orange);
+                color: #fff;
+            }
+
+            /* 6. 背包弹窗适配 */
+            .inv-panel {
+                width: 90%;
+                max-height: 70%;
+            }
+            .use-btn {
+                padding: 8px 20px; /* 更大的点击区域 */
+            }
+        }
+
+        /* 针对极小屏幕 (iPhone SE 等) 的微调 */
+        @media screen and (max-width: 380px) {
+            .sys-title h1 { font-size: 1.5rem; }
+            .stats-grid { display: grid; grid-template-columns: 1fr 1fr; } /* 网格布局防止挤压 */
+            #bag-btn { grid-column: span 2; width: 100%; text-align: center; margin-top:5px;}
+        }
 
     </style>
 </head>
