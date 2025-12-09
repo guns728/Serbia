@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SHENZHOU: DELTA PROTOCOL</title>
+    <style>
+        :root {
+            --bg: #0b0f19;
+            --panel: #141b26;
+            --border: #2c3e50;
+            --primary: #e67e22; /* 三角洲橙 */
+            --text-main: #ecf0f1;
+            --text-dim: #7f8c8d;
+            
+            /* 稀有度颜色 (三角洲/塔科夫风格) */
+            --r-0: #7f8c8d; /* 废品 (灰) */
+            --r-1: #bdc3c7; /* 普通 (白) */
+            --r-2: #2ecc71; /* 优良 (绿) */
+            --r-3: #3498db; /* 稀有 (蓝) */
+            --r-4: #9b59b6; /* 史诗 (紫) */
+            --r-5: #f1c40f; /* 传说 (金) */
+            --r-6: #e74c3c; /* 机密 (红) */
+
+            --font-code: 'Courier New', Courier, monospace;
+            --font-ui: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        * { box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+        
+        body {
+            margin: 0; background: var(--bg); color: var(--text-main);
+            font-family: var(--font-ui); overflow: hidden; height: 100vh;
+            display: flex; justify-content: center; align-items: center;
+        }
+
+        /* --- 全屏特效 --- */
+        .scanline {
+            position: fixed; inset: 0; pointer-events: none; z-index: 10;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%);
+            background-size: 100% 4px; opacity: 0.6;
+        }
+        
+        /* --- 主界面容器 --- */
+        #app {
+            width: 100%; max-width: 900px; height: 100%; max-height: 95vh;
+            background: var(--panel); border: 1px solid var(--border);
+            display: flex; flex-direction: column; position: relative;
+            box-shadow: 0 0 40px rgba(0,0,0,0.8);
+        }
+
+        /* --- 头部 --- */
+        header {
+            background: rgba(0,0,0,0.3); padding: 10px 15px;
+            border-bottom: 2px solid var(--primary);
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; }
+        .logo { font-weight: 900; font-size: 1.1rem; letter-spacing: 1px; color: var(--primary); }
+        .credit { font-family: var(--font-code); color: var(--r-5); font-weight: bold; }
+        
+        .status-bar { display: flex; gap: 15px; font-size: 0.85rem; color: var(--text-dim); align-items: center; }
+        .hp-box { display: flex; align-items: center; gap: 5px; width: 150px; }
+        .progress-bg { flex: 1; height: 8px; background: #333; border-radius: 2px; overflow: hidden; }
+        .progress-fill { height: 100%; background: var(--r-6); width: 100%; transition: width 0.3s; }
+        .gear-info { display: flex; gap: 10px; font-size: 0.8rem; }
+
+        /* --- 内容视口 --- */
+        #viewport {
+            flex: 1; overflow-y: auto; padding: 15px; position: relative;
+            background: radial-gradient(circle at center, #1a2533 0%, #141b26 100%);
+        }
+        
+        /* --- 导航栏 --- */
+        nav { display: flex; border-top: 1px solid var(--border); background: #0e121b; }
+        .nav-btn {
+            flex: 1; padding: 15px; background: transparent; border: none; color: var(--text-dim);
+            font-weight: bold; cursor: pointer; transition: 0.2s; border-top: 3px solid transparent;
+        }
+        .nav-btn.active { color: var(--primary); border-top-color: var(--primary); background: rgba(230, 126, 34, 0.05); }
+        .nav-btn:hover { color: #fff; }
+
+        /* --- 通用组件 --- */
+        .grid-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+        .item-card {
+            background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+            padding: 10px; display: flex; flex-direction: column; gap: 4px; cursor: pointer;
+            position: relative; overflow: hidden; transition: all 0.1s;
+        }
+        .item-card:hover { border-color: var(--primary); background: rgba(255,255,255,0.06); transform: translateY(-1px); }
+        .item-card::before {
+            content:''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--color, #7f8c8d);
+        }
+        
+        .i-name { font-weight: bold; color: var(--text-main); font-size: 0.95rem; }
+        .i-sub { font-size: 0.75rem; color: var(--text-dim); display: flex; justify-content: space-between; }
+        .i-price { color: var(--r-5); font-family: var(--font-code); font-weight: bold; }
+        
+        .badge-equip { position: absolute; right: 5px; top: 5px; background: var(--primary); color: #000; font-size: 0.7rem; padding: 1px 4px; border-radius: 2px; font-weight: bold; }
+
+        /* --- 稀有度光效类 --- */
+        .c-0 { --color: var(--r-0); }
+        .c-1 { --color: var(--r-1); }
+        .c-2 { --color: var(--r-2); }
+        .c-3 { --color: var(--r-3); }
+        .c-4 { --color: var(--r-4); box-shadow: inset 0 0 10px rgba(155, 89, 182, 0.1); }
+        .c-5 { --color: var(--r-5); box-shadow: inset 0 0 15px rgba(241, 196, 15, 0.15); border-color: rgba(241, 196, 15, 0.3); }
+        .c-6 { --color: var(--r-6); box-shadow: inset 0 0 20px rgba(231, 76, 60, 0.2); animation: pulseRed 2s infinite; border-color: rgba(231, 76, 60, 0.5); }
+        @keyframes pulseRed { 0% { opacity: 1; } 50% { opacity: 0.9; } 100% { opacity: 1; } }
+
+        /* --- RAID 界面 --- */
+        .raid-container { height: 100%; display: flex; flex-direction: column; }
+        .raid-log-box {
+            flex: 1; border: 1px solid var(--border); background: rgba(0,0,0,0.2);
+            padding: 10px; overflow-y: auto; font-family: var(--font-code); font-size: 0.9rem;
+            margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px;
+        }
+        .log-line { border-left: 3px solid #555; padding-left: 8px; line-height: 1.4; }
+        .l-combat { border-color: var(--r-6); color: #ffadad; background: rgba(231,76,60,0.1); }
+        .l-loot { border-color: var(--r-5); color: #fdfefe; }
+        .l-high { border-color: var(--r-6); color: var(--r-5); text-shadow: 0 0 5px var(--r-5); }
+        
+        .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .btn {
+            padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+            color: var(--text-main); font-weight: bold; cursor: pointer; text-transform: uppercase;
+        }
+        .btn:hover:not(:disabled) { background: var(--primary); color: #000; border-color: var(--primary); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-success { border-color: var(--r-2); color: var(--r-2); }
+        .btn-success:hover:not(:disabled) { background: var(--r-2); color: #000; }
+        .btn-danger { border-color: var(--r-6); color: var(--r-6); }
+        .btn-danger:hover { background: var(--r-6); color: #fff; }
+
+        /* --- 弹窗与遮罩 --- */
+        #modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 100;
+            display: none; justify-content: center; align-items: center;
+            backdrop-filter: blur(5px);
+        }
+        .modal-content {
+            background: var(--panel); border: 1px solid var(--primary); padding: 30px;
+            width: 85%; max-width: 400px; text-align: center; box-shadow: 0 0 50px rgba(230, 126, 34, 0.2);
+        }
+        .modal-title { font-size: 1.2rem; color: var(--primary); margin-bottom: 15px; font-weight: bold; }
+        .modal-text { margin-bottom: 25px; line-height: 1.6; color: #ccc; }
+
+        /* 倒计时遮罩 */
+        #extract-overlay {
+            position: absolute; inset: 0; background: rgba(0,0,0,0.85); z-index: 50;
+            display: none; flex-direction: column; justify-content: center; align-items: center;
+        }
+        .loader {
+            width: 50px; height: 50px; border: 5px solid #333; border-top-color: var(--primary);
+            border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+    </style>
+</head>
+<body>
+
+<div class="scanline"></div>
+
+<div id="app">
+    <header>
+        <div class="top-bar">
+            <div class="logo">DELTA PROTOCOL <span style="font-size:0.7em; opacity:0.5">V3.0</span></div>
+            <div class="credit" id="ui-money">0 CR</div>
+        </div>
+        <div class="status-bar">
+            <div class="hp-box">
+                <span>HP</span>
+                <div class="progress-bg"><div class="progress-fill" id="ui-hp-bar"></div></div>
+                <span id="ui-hp-text">100</span>
+            </div>
+            <div class="gear-info" id="ui-gear">
+                <!-- JS 填充装备信息 -->
+            </div>
+        </div>
+    </header>
+
+    <div id="viewport">
+        <!-- 动态内容 -->
+    </div>
+
+    <nav>
+        <button class="nav-btn active" onclick="renderHub('deploy')">部署行动</button>
+        <button class="nav-btn" onclick="renderHub('stash')">物资仓库</button>
+        <button class="nav-btn" onclick="renderHub('shop')">黑市军火</button>
+    </nav>
+</div>
+
+<!-- 撤离倒计时层 -->
+<div id="extract-overlay">
+    <div class="loader"></div>
+    <div style="font-size:1.2rem; font-weight:bold; color:#fff">正在呼叫运输机...</div>
+    <div style="color:var(--primary); margin-top:5px;">坚守 <span id="extract-timer">3</span> 秒</div>
+</div>
+
+<!-- 通用弹窗层 -->
+<div id="modal-overlay">
+    <div class="modal-content">
+        <div class="modal-title" id="m-title">提示</div>
+        <div class="modal-text" id="m-msg">内容</div>
+        <button class="btn" style="width:100%" onclick="closeModal()">确认</button>
+    </div>
+</div>
+
+<script>
+/* =========================================
+   数据库 (Item DB) - 扩充版
+   ========================================= */
+const DB = {
+    items: [
+        // --- 垃圾/材料 (0-1) ---
+        { id: 'j_screw', name: '生锈螺丝', r: 0, price: 15, type: 'junk', sub: '废品' },
+        { id: 'j_tape', name: '绝缘胶带', r: 1, price: 120, type: 'junk', sub: '材料' },
+        { id: 'j_wire', name: '铜导线', r: 1, price: 150, type: 'junk', sub: '材料' },
+        { id: 'j_cig', name: '半包香烟', r: 0, price: 80, type: 'junk', sub: '日用品' },
+
+        // --- 燃料/工具 (2-3) ---
+        { id: 't_fuel_s', name: '打火机油', r: 1, price: 250, type: 'junk', sub: '燃料' },
+        { id: 't_fuel_l', name: '航空煤油桶', r: 3, price: 3500, type: 'loot', sub: '燃料' },
+        { id: 't_drill', name: '冲击钻', r: 2, price: 1200, type: 'loot', sub: '工具' },
+        { id: 't_wrench', name: '工业扳手', r: 2, price: 900, type: 'loot', sub: '工具' },
+        
+        // --- 医疗 (1-4) ---
+        { id: 'med_band', name: '简易绷带', r: 1, price: 100, type: 'med', val: 15, sub: '急救' },
+        { id: 'med_kit', name: '军用医疗包', r: 2, price: 800, type: 'med', val: 60, sub: '急救' },
+        { id: 'med_surg', name: '手术包', r: 3, price: 2500, type: 'med', val: 100, sub: '手术' },
+        { id: 'med_stim', name: '再生注射器', r: 4, price: 5000, type: 'med', val: 100, sub: '强化' },
+
+        // --- 电子元件 (2-5) ---
+        { id: 'e_cpu', name: 'CPU芯片', r: 2, price: 1500, type: 'loot', sub: '电子' },
+        { id: 'e_ram', name: '内存条', r: 2, price: 1200, type: 'loot', sub: '电子' },
+        { id: 'e_gpu', name: '显卡 (矿卡)', r: 3, price: 4000, type: 'loot', sub: '电子' },
+        { id: 'e_mil_radio', name: '军用电台', r: 4, price: 8500, type: 'loot', sub: '通讯' },
+        { id: 'e_flight', name: '黑匣子', r: 5, price: 18000, type: 'loot', sub: '机密电子' },
+
+        // --- 家具/藏品 (3-6) ---
+        { id: 'art_tea', name: '紫砂壶', r: 3, price: 3000, type: 'loot', sub: '古董' },
+        { id: 'art_watch', name: '金劳力士', r: 4, price: 9000, type: 'loot', sub: '奢侈品' },
+        { id: 'art_vase', name: '青花瓷瓶', r: 5, price: 25000, type: 'loot', sub: '文物' },
+        { id: 'art_statue', name: '纯金狮子', r: 5, price: 40000, type: 'loot', sub: '藏品' },
+        
+        // --- 情报/机密 (5-6) ---
+        { id: 'doc_folder', name: '机密文件', r: 4, price: 12000, type: 'loot', sub: '情报' },
+        { id: 'doc_blue', name: '0号实验蓝图', r: 6, price: 60000, type: 'loot', sub: '绝密' },
+        { id: 'key_red', name: '红卡: 军械库', r: 6, price: 80000, type: 'loot', sub: '权限' },
+
+        // --- 装备: 武器 (神州重工/山海科技) ---
+        { id: 'w_p92', name: '惊蛰-II 电浆手枪', r: 1, price: 2000, type: 'gear_w', atk: 15, sub: '警用配枪' },
+        { id: 'w_mp5', name: '青鸾-S 疾速冲锋枪', r: 2, price: 6000, type: 'gear_w', atk: 30, sub: '近战压制' },
+        { id: 'w_akm', name: '龙吟-97 突击步枪', r: 3, price: 15000, type: 'gear_w', atk: 50, sub: '制式步枪' },
+        { id: 'w_m4', name: '朱雀-X 战术能量枪', r: 4, price: 35000, type: 'gear_w', atk: 70, sub: '特勤专用' },
+        { id: 'w_awm', name: '昆仑-Z 磁轨狙击炮', r: 5, price: 65000, type: 'gear_w', atk: 100, sub: '反器材' },
+
+        // --- 装备: 护甲 (玄武防务/天师府) ---
+        { id: 'a_paca', name: '符文防刺背心', r: 1, price: 1500, type: 'gear_a', def: 10, sub: '轻甲' },
+        { id: 'a_3b', name: '玄武-3 型护甲', r: 2, price: 5000, type: 'gear_a', def: 25, sub: '标准防护' },
+        { id: 'a_iotv', name: '金刚-V 重型甲', r: 4, price: 20000, type: 'gear_a', def: 45, sub: '重装防暴' },
+        { id: 'a_exo', name: '天尊-原型外骨骼', r: 6, price: 100000, type: 'gear_a', def: 70, sub: '神话级' }
+    ],
+
+    locs: [
+        { id: 'slums', name: '下城区·九龙夜市', danger: 1, cost: 0, dropMod: 0, desc: '终年不见天日的贫民窟，霓虹灯牌闪烁。产出低级义体零件与生活垃圾。' },
+        { id: 'dam', name: '首阳重工铸造厂', danger: 3, cost: 1500, dropMod: 2, desc: '充满蒸汽与机械轰鸣的工业禁区。产出工业燃料与机械工具。' },
+        { id: 'lab', name: '蓬莱生物研究所', danger: 5, cost: 8000, dropMod: 4, desc: '山海公司的废弃设施，徘徊着失控实验体。产出高级针剂与芯片。' },
+        { id: 'crack', name: '雷音塔·云顶天宫', danger: 8, cost: 30000, dropMod: 8, desc: '神州的权力顶点，只有顶层权贵才能踏足。存放着最高机密与核心科技。' }
+    ]
+};
+
+/* =========================================
+   游戏引擎 (Logic)
+   ========================================= */
+const Game = {
+    money: 5000,
+    hp: 100,
+    maxHp: 100,
+    stash: [],
+    gear: { weapon: null, armor: null },
+    
+    // Raid 状态
+    inRaid: false,
+    raid: {
+        loc: null,
+        loot: [],
+        log: [],
+        foundExtract: false,
+        steps: 0
+    }
+};
+
+// 辅助: 查找物品
+function getItem(id) {
+    const t = DB.items.find(i => i.id === id);
+    return t ? JSON.parse(JSON.stringify(t)) : null; // Deep copy
+}
+
+// 辅助: UI更新
+function updateUI() {
+    // 头部信息
+    document.getElementById('ui-money').innerText = Game.money.toLocaleString() + ' CR';
+    document.getElementById('ui-hp-text').innerText = `${Game.hp}/${Game.maxHp}`;
+    document.getElementById('ui-hp-bar').style.width = (Game.hp / Game.maxHp * 100) + '%';
+    
+    // 装备信息
+    const w = Game.gear.weapon;
+    const a = Game.gear.armor;
+    let gearHtml = '';
+    gearHtml += w ? `<span class="c-${w.r}">[${w.name}]</span>` : `<span style="opacity:0.5">无武器</span>`;
+    gearHtml += a ? `<span class="c-${a.r}">[${a.name}]</span>` : `<span style="opacity:0.5">无护甲</span>`;
+    document.getElementById('ui-gear').innerHTML = gearHtml;
+}
+
+// 辅助: 弹窗
+function showModal(title, msg) {
+    document.getElementById('m-title').innerText = title;
+    document.getElementById('m-msg').innerHTML = msg;
+    document.getElementById('modal-overlay').style.display = 'flex';
+}
+function closeModal() {
+    document.getElementById('modal-overlay').style.display = 'none';
+}
+
+/* =========================================
+   核心页面渲染 (Hub / Raid)
+   ========================================= */
+function renderHub(tab) {
+    if (Game.inRaid) return; // 战斗中无法切换
+    
+    const viewport = document.getElementById('viewport');
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    // 简单匹配高亮
+    if(tab === 'deploy') document.querySelectorAll('.nav-btn')[0].classList.add('active');
+    if(tab === 'stash') document.querySelectorAll('.nav-btn')[1].classList.add('active');
+    if(tab === 'shop') document.querySelectorAll('.nav-btn')[2].classList.add('active');
+
+    if (tab === 'deploy') {
+        let html = '<div class="grid-list" style="grid-template-columns:1fr">';
+        DB.locs.forEach(loc => {
+            const locked = Game.money < loc.cost;
+            html += `
+                <div class="item-card" onclick="${!locked ? `startRaid('${loc.id}')` : ''}" style="${locked?'opacity:0.5':''}; border-left:4px solid var(--primary)">
+                    <div style="display:flex; justify-content:space-between; align-items:center">
+                        <span class="i-name" style="font-size:1.1rem">${loc.name} <span style="font-size:0.8rem; color:var(--r-6)">LV.${loc.danger}</span></span>
+                        <span class="i-price" style="color:${locked?'#e74c3c':'#fff'}">${loc.cost === 0 ? '免费' : loc.cost + ' CR'}</span>
+                    </div>
+                    <div class="i-sub" style="margin-top:5px">${loc.desc}</div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        viewport.innerHTML = html;
+    } 
+    else if (tab === 'stash') {
+        viewport.innerHTML = renderGrid(Game.stash, true);
+    }
+    else if (tab === 'shop') {
+        // 筛选可购买物品 (除了 junk 和 loot 以外的)
+        const shopItems = DB.items.filter(i => ['med','gear_w','gear_a'].includes(i.type));
+        viewport.innerHTML = renderGrid(shopItems, false, true);
+    }
+    updateUI();
+}
+
+function renderGrid(list, isStash, isShop = false) {
+    if (!list || list.length === 0) return '<div style="text-align:center; padding:50px; opacity:0.5">空空如也</div>';
+    
+    let html = '<div class="grid-list">';
+    list.forEach((item, idx) => {
+        // 装备状态检查
+        let isEquipped = false;
+        if(isStash) {
+            if(Game.gear.weapon === item) isEquipped = true;
+            if(Game.gear.armor === item) isEquipped = true;
+        }
+
+        html += `
+            <div class="item-card c-${item.r}" onclick="${isShop ? `buyItem('${item.id}')` : `itemAction(${idx})`}">
+                <div class="i-name">${item.name}</div>
+                <div class="i-sub">
+                    <span>${item.sub}</span>
+                    <span class="i-price">${isShop ? item.price : Math.floor(item.price * 0.4)}</span>
+                </div>
+                ${isEquipped ? '<span class="badge-equip">已装备</span>' : ''}
+            </div>
+        `;
+    });
+    html += '</div>';
+    return html;
+}
+
+/* =========================================
+   交互逻辑 (Inventory / Shop)
+   ========================================= */
+function buyItem(id) {
+    const tpl = getItem(id);
+    if (Game.money >= tpl.price) {
+        Game.money -= tpl.price;
+        Game.stash.push(tpl);
+        updateUI();
+        showModal('交易成功', `购买了 <span class="c-${tpl.r}">${tpl.name}</span>`);
+    } else {
+        showModal('交易失败', '信用点不足');
+    }
+}
+
+function itemAction(idx) {
+    const item = Game.stash[idx];
+    const isEquipped = (Game.gear.weapon === item || Game.gear.armor === item);
+    
+    // 生成操作菜单
+    let actions = [];
+    
+    if (item.type.startsWith('gear')) {
+        if (isEquipped) actions.push(`<button class="btn" onclick="actUnequip(${idx})">卸下</button>`);
+        else actions.push(`<button class="btn btn-success" onclick="actEquip(${idx})">装备</button>`);
+    } else if (item.type === 'med') {
+        actions.push(`<button class="btn btn-success" onclick="actUse(${idx})">使用 (回血)</button>`);
+    }
+    
+    if (!isEquipped) {
+        const val = Math.floor(item.price * 0.4);
+        actions.push(`<button class="btn btn-danger" onclick="actSell(${idx})">出售 (+${val})</button>`);
+    }
+
+    const html = `
+        <div style="margin-bottom:15px; text-align:left">
+            <div class="i-name c-${item.r}" style="font-size:1.2rem; margin-bottom:5px">${item.name}</div>
+            <div style="color:#aaa; font-size:0.9rem">类型: ${item.sub} | 价值: ${Math.floor(item.price * 0.4)}</div>
+            ${item.atk ? `<div>攻击力: +${item.atk}</div>` : ''}
+            ${item.def ? `<div>防御力: +${item.def}</div>` : ''}
+            ${item.val ? `<div>恢复量: +${item.val}</div>` : ''}
+        </div>
+        <div class="btn-group" style="grid-template-columns:1fr">${actions.join('')}</div>
+        <button class="btn" style="margin-top:10px; width:100%" onclick="closeModal()">取消</button>
+    `;
+    
+    document.getElementById('m-title').innerText = "物品操作";
+    document.getElementById('m-msg').innerHTML = html;
+    document.getElementById('modal-overlay').style.display = 'flex';
+}
+
+function actEquip(idx) {
+    const item = Game.stash[idx];
+    if(item.type === 'gear_w') Game.gear.weapon = item;
+    if(item.type === 'gear_a') Game.gear.armor = item;
+    closeModal();
+    renderHub('stash');
+}
+function actUnequip(idx) {
+    const item = Game.stash[idx];
+    if(Game.gear.weapon === item) Game.gear.weapon = null;
+    if(Game.gear.armor === item) Game.gear.armor = null;
+    closeModal();
+    renderHub('stash');
+}
+function actUse(idx) {
+    const item = Game.stash[idx];
+    if (Game.hp >= Game.maxHp) { closeModal(); return; }
+    Game.hp = Math.min(Game.maxHp, Game.hp + item.val);
+    Game.stash.splice(idx, 1);
+    closeModal();
+    renderHub('stash');
+}
+function actSell(idx) {
+    const item = Game.stash[idx];
+    Game.money += Math.floor(item.price * 0.4);
+    Game.stash.splice(idx, 1);
+    closeModal();
+    renderHub('stash');
+}
+
+/* =========================================
+   RAID 核心逻辑
+   ========================================= */
+function startRaid(locId) {
+    if (Game.hp < 20) return showModal('无法部署', '生命值过低，请先治疗。');
+    
+    const loc = DB.locs.find(l => l.id === locId);
+    if (Game.money < loc.cost) return showModal('无法部署', '账户余额不足以支付入场费。');
+    
+    Game.money -= loc.cost;
+    Game.inRaid = true;
+    Game.raid = {
+        loc: loc,
+        loot: [],
+        log: [`>> 卫星链路已连接...`, `>> 抵达: ${loc.name}`, `>> 威胁等级: ${loc.danger}`],
+        foundExtract: false,
+        steps: 0
+    };
+    
+    renderRaidUI();
+}
+
+function renderRaidUI() {
+    const viewport = document.getElementById('viewport');
+    viewport.innerHTML = `
+        <div class="raid-container">
+            <div style="display:flex; justify-content:space-between; margin-bottom:5px; padding:0 5px;">
+                <span style="color:var(--primary)">${Game.raid.loc.name}</span>
+                <span id="raid-extract-status">${Game.raid.foundExtract ? '<span style="color:var(--r-2)">[撤离点已激活]</span>' : '<span style="color:var(--r-6)">[寻找信号中...]</span>'}</span>
+            </div>
+            
+            <div class="raid-log-box" id="raid-log"></div>
+            
+            <div style="background:#000; padding:10px; border:1px solid #333; margin-bottom:10px;">
+                <div style="color:#aaa; font-size:0.8rem">临时背包 (死亡掉落):</div>
+                <div id="raid-bag-preview" style="display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; max-height:60px; overflow:hidden;"></div>
+            </div>
+
+            <div class="btn-group">
+                <button class="btn" onclick="actExplore()">战术搜索</button>
+                <button class="btn" onclick="actRest()">隐蔽治疗</button>
+                <button class="btn btn-success" id="btn-extract" onclick="actExtract()" ${Game.raid.foundExtract ? '' : 'disabled'}>
+                    ${Game.raid.foundExtract ? '呼叫撤离' : '定位撤离点'}
+                </button>
+                <button class="btn btn-danger" onclick="actRetreat()">强行中断</button>
+            </div>
+        </div>
+    `;
+    updateRaidLog();
+    updateRaidBag();
+}
+
+function updateRaidLog() {
+    const el = document.getElementById('raid-log');
+    if(!el) return;
+    el.innerHTML = Game.raid.log.map(l => `<div class="log-line ${l.includes('[!]')?'l-combat':l.includes('[+]')?'l-loot':l.includes('[$$$]')?'l-high':''}">${l}</div>`).join('');
+    el.scrollTop = el.scrollHeight;
+}
+
+function updateRaidBag() {
+    const el = document.getElementById('raid-bag-preview');
+    if(!el) return;
+    if(Game.raid.loot.length === 0) el.innerHTML = '<span style="color:#444">空</span>';
+    else el.innerHTML = Game.raid.loot.map(i => `<span class="c-${i.r}" style="font-size:0.8rem">[${i.name}]</span>`).join('');
+}
+
+function addLog(msg) {
+    Game.raid.log.push(msg);
+    updateRaidLog();
+}
+
+/* =========================================
+   RAID 动作
+   ========================================= */
+function actExplore() {
+    if (!Game.inRaid) return;
+    Game.raid.steps++;
+    
+    // 1. 撤离点判定 (随探索次数增加概率)
+    if (!Game.raid.foundExtract && Math.random() < 0.15 + (Game.raid.steps * 0.02)) {
+        Game.raid.foundExtract = true;
+        addLog(`>> [i] 接收到加密信号... 撤离点坐标已确认。`);
+        renderRaidUI(); // 刷新按钮状态
+        return;
+    }
+    
+    // 2. 随机事件
+    const roll = Math.random();
+    const danger = Game.raid.loc.danger; // 1-8
+    
+    // 遇敌概率: 基础 30%, 随危险度提升
+    const combatChance = 0.25 + (danger * 0.05);
+    
+    if (roll < combatChance) {
+        encounter();
+    } else if (roll < 0.9) {
+        scavenge();
+    } else {
+        const txt = ["周围很安静。", "发现了一些战斗痕迹。", "正在通过危险区域...", "听到远处有枪声。" , "全息广告牌发出滋滋的电流声...",
+            "踏过积水的霓虹街道，远处传来警笛声。",
+            "空气中弥漫着劣质合成香料的味道。",
+            "路边的电子佛龛正在自动念经...",
+            "一架故障的送餐无人机坠落在你脚边。",
+            "扫描到微弱的非法数据流信号..."];
+        addLog(">> " + txt[Math.floor(Math.random()*txt.length)]);
+    }
+}
+
+function scavenge() {
+    // 掉落逻辑: 基于 DropMod 修正概率
+    // Mod越高，targetR 越高
+    const mod = Game.raid.loc.dropMod;
+    const roll = Math.random() * 100;
+    
+    let targetR = 0;
+    // 概率表 (简化版)
+    if (roll > 98 - mod) targetR = 6; // 红
+    else if (roll > 95 - mod*2) targetR = 5; // 金
+    else if (roll > 85 - mod*3) targetR = 4; // 紫
+    else if (roll > 65 - mod*3) targetR = 3; // 蓝
+    else if (roll > 40 - mod*2) targetR = 2; // 绿
+    else if (roll > 20) targetR = 1; // 白
+    
+    // 从 DB 筛选对应 R 的 loot/junk
+    const pool = DB.items.filter(i => (i.type==='loot' || i.type==='junk') && i.r === targetR);
+    
+    if (pool.length > 0) {
+        const item = pool[Math.floor(Math.random() * pool.length)];
+        // 复制一份
+        const lootItem = JSON.parse(JSON.stringify(item));
+        Game.raid.loot.push(lootItem);
+        
+        let tag = "[+]";
+        if (targetR >= 5) tag = "[$$$]";
+        addLog(`>> ${tag} 搜索发现: ${lootItem.name} (${lootItem.sub})`);
+        updateRaidBag();
+    } else {
+        addLog(">> 搜索了一番，但一无所获。");
+    }
+}
+
+function encounter() {
+    // 敌人生成
+    const power = Game.raid.loc.danger;
+    const enemies = [
+        { n: '赛博疯子', hp: 20, atk: 5 },
+        { n: '义体拾荒者', hp: 40, atk: 15 },
+        { n: '帮派打手', hp: 80, atk: 30 },
+        { n: '公司安保', hp: 120, atk: 50 },
+        { n: '天师府执事', hp: 200, atk: 80 },
+        { n: '机械罗汉', hp: 400, atk: 120 } // Boss
+    ];
+    
+    // 根据危险度限制敌人等级
+    let eIdx = Math.floor(Math.random() * Math.min(enemies.length, power));
+    // 极小概率遇到越级怪
+    if(Math.random() < 0.1) eIdx = Math.min(enemies.length-1, eIdx+1);
+    
+    let enemy = { ...enemies[eIdx] };
+    addLog(`>> [!] 遭遇敌人: ${enemy.n} (HP:${enemy.hp})`);
+    
+    // 快速战斗模拟
+    // 玩家 Atk = 基础10 + 武器
+    // 玩家 Def = 护甲
+    const pAtk = 10 + (Game.gear.weapon ? Game.gear.weapon.atk : 0);
+    const pDef = Game.gear.armor ? Game.gear.armor.def : 0;
+    
+    while(enemy.hp > 0 && Game.hp > 0) {
+        // 玩家打敌人
+        enemy.hp -= pAtk;
+        // 敌人打玩家
+        if(enemy.hp > 0) {
+            let dmg = Math.max(1, enemy.atk - pDef);
+            // 波动
+            dmg = Math.floor(dmg * (0.8 + Math.random()*0.4));
+            Game.hp -= dmg;
+        }
+    }
+    
+    updateUI();
+    if(Game.hp <= 0) {
+        Game.hp = 0;
+        die();
+    } else {
+        addLog(`>> [!] 击杀威胁。威胁清除。`);
+        // 掉落补偿
+        if(Math.random() < 0.4) scavenge();
+    }
+}
+
+function actRest() {
+    if(!Game.inRaid) return;
+    const heal = 15;
+    Game.hp = Math.min(Game.maxHp, Game.hp + heal);
+    updateUI();
+    addLog(`>> 进行了战地急救，HP +${heal}`);
+    // 惩罚概率
+    if(Math.random() < 0.25) {
+        addLog(`>> [!] 动作太大了，引来了敌人！`);
+        encounter();
+    }
+}
+
+// ----------------------------------------------------
+// 核心修复: 撤离逻辑
+// ----------------------------------------------------
+function actExtract() {
+    if (!Game.inRaid || !Game.raid.foundExtract) return;
+
+    // 1. 显示倒计时遮罩
+    const overlay = document.getElementById('extract-overlay');
+    const timerEl = document.getElementById('extract-timer');
+    overlay.style.display = 'flex';
+    
+    let timeLeft = 3;
+    timerEl.innerText = timeLeft;
+
+    addLog(">> 正在呼叫运输机... 保持位置！");
+
+    const timer = setInterval(() => {
+        timeLeft--;
+        timerEl.innerText = timeLeft;
+        
+        // 模拟流弹/甚至死亡 (Hardcore)
+        // 这里为了体验，暂时不加撤离时死亡逻辑，只倒计时
+        
+        if (timeLeft <= 0) {
+            clearInterval(timer);
+            overlay.style.display = 'none';
+            finalizeExtract();
+        }
+    }, 1000);
+}
+
+function finalizeExtract() {
+    try {
+        // 结算
+        const count = Game.raid.loot.length;
+        let totalVal = 0;
+        
+        Game.raid.loot.forEach(i => {
+            Game.stash.push(i);
+            totalVal += i.price;
+        });
+
+        Game.inRaid = false;
+        
+        // 弹窗
+        showModal(
+            '<span style="color:var(--r-2)">撤离成功</span>', 
+            `安全返回基地。<br><br>
+             带回物资: <b>${count}</b> 件<br>
+             预估总价: <b class="c-5">${totalVal} CR</b>`
+        );
+        
+        // 刷新回仓库页
+        renderHub('stash');
+        
+    } catch (e) {
+        console.error("Extraction Error:", e);
+        // 兜底
+        Game.inRaid = false;
+        renderHub('deploy');
+        alert("撤离结算发生异常，但你已安全返回。");
+    }
+}
+
+function actRetreat() {
+    if(confirm("确定丢弃所有物资强行撤离？")) {
+        Game.inRaid = false;
+        renderHub('deploy');
+    }
+}
+
+function die() {
+    Game.inRaid = false;
+    Game.hp = 1; 
+    // 丢失战利品
+    showModal(
+        '<span style="color:var(--r-6)">行动失败 (K.I.A)</span>',
+        '你在战斗中受了重伤。<br>搜救队把你拖回了基地。<br><br><b>惩罚: 丢失背包内所有物资。</b>'
+    );
+    renderHub('deploy');
+}
+
+// 启动游戏
+// 发点新手装
+Game.stash.push(getItem('med_band'));
+Game.stash.push(getItem('w_p92'));
+Game.stash.push(getItem('a_paca'));
+renderHub('deploy');
+
+</script>
+</body>
+</html>

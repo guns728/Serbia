@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SHENZHOU // PRTS TERMINAL</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            /* --- Arknights Palette --- */
+            --bg-deep: #0A1828;
+            --bg-panel: rgba(30, 42, 60, 0.85);
+            --bg-overlay: rgba(0, 0, 0, 0.7);
+            --ark-orange: #FF6B35;
+            --ark-orange-dim: rgba(255, 107, 53, 0.2);
+            --text-main: #E6E6E6;
+            --text-sub: #8F9BB3;
+            --grid-line: rgba(255, 255, 255, 0.04);
+            --ease-ark: cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            height: 100vh;
+            background-color: var(--bg-deep);
+            color: var(--text-main);
+            font-family: 'Noto Sans SC', sans-serif;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            user-select: none;
+            perspective: 1200px;
+        }
+
+        /* --- 背景视觉工程 --- */
+        #bg-grid {
+            position: absolute;
+            top: -50%; left: -50%; width: 200%; height: 200%;
+            background-image: 
+                linear-gradient(var(--grid-line) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+            background-size: 50px 50px;
+            z-index: -10;
+            transform: perspective(500px) rotateX(20deg) scale(1.5);
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        .noise {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            opacity: 0.04; z-index: -5; pointer-events: none;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='1'/%3E%3C/svg%3E");
+        }
+
+        .scanlines {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(to bottom, rgba(255,255,255,0) 50%, rgba(0,0,0,0.05) 50%);
+            background-size: 100% 3px;
+            pointer-events: none; z-index: 100; opacity: 0.5;
+            animation: scanScroll 8s linear infinite;
+        }
+        @keyframes scanScroll { from { background-position: 0 0; } to { background-position: 0 100%; } }
+
+        /* --- 装饰性 SVG 六边形 --- */
+        .hex-deco { position: absolute; fill: none; stroke: var(--ark-orange); stroke-width: 1; opacity: 0.1; z-index: -8; transition: transform 0.1s; }
+
+        /* --- 顶部新闻条 --- */
+        .ticker-wrap {
+            position: absolute; top: 0; width: 100%; height: 28px;
+            background: rgba(10, 24, 40, 0.9); border-bottom: 1px solid var(--ark-orange);
+            overflow: hidden; white-space: nowrap; z-index: 50;
+            display: flex; align-items: center;
+            font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--ark-orange);
+        }
+        .ticker { display: inline-block; padding-left: 100%; animation: ticker 40s linear infinite; }
+        @keyframes ticker { 0% { transform: translate3d(0, 0, 0); } 100% { transform: translate3d(-100%, 0, 0); } }
+
+        /* --- HUD 角落信息 --- */
+        .hud { position: absolute; z-index: 40; font-family: 'JetBrains Mono'; font-size: 0.7rem; color: var(--text-sub); pointer-events: none; }
+        .hud-tl { top: 50px; left: 20px; border-left: 2px solid var(--ark-orange); padding-left: 10px; }
+        .hud-tr { top: 50px; right: 20px; text-align: right; border-right: 2px solid var(--ark-orange); padding-right: 10px; }
+        .hud-bl { bottom: 20px; left: 20px; opacity: 0.7; }
+        .hud-br { bottom: 20px; right: 20px; display: flex; gap: 4px; align-items: flex-end; height: 40px; }
+        
+        .hud-val { color: #fff; font-weight: bold; }
+        .bar-viz { width: 5px; background: var(--ark-orange); animation: viz 0.5s ease infinite alternate; }
+        @keyframes viz { from { height: 10%; } to { height: 100%; } }
+
+        /* --- 主界面层 --- */
+        #main-layer {
+            width: 100%; height: 100%;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            transform-style: preserve-3d; transition: transform 0.1s ease-out;
+            z-index: 10;
+        }
+
+        /* 顶部状态栏 (玩家数据) */
+        .status-bar {
+            position: absolute; top: 10%; left: 10%; width: 80%;
+            display: flex; justify-content: space-between; align-items: flex-end;
+            border-bottom: 1px solid rgba(255,255,255,0.15); padding-bottom: 10px;
+            transform: translateZ(20px);
+        }
+        .sys-title h1 { margin: 0; font-size: 3.5rem; line-height: 0.9; font-weight: 900; letter-spacing: -2px; color: #fff; }
+        .sys-title span { font-size: 0.8rem; color: var(--ark-orange); letter-spacing: 5px; }
+        
+        .stats-grid { display: flex; gap: 20px; text-align: right; font-size: 0.85rem; font-family: 'Noto Sans SC'; color: var(--text-sub); }
+        .stat-item { display: flex; flex-direction: column; }
+        .stat-item span:first-child { font-size: 0.7rem; color: var(--ark-orange); margin-bottom: 2px; }
+        .stat-item span:last-child { font-weight: 700; color: #fff; }
+
+        /* 背包按钮 */
+        #bag-btn {
+            background: transparent; border: 1px solid var(--text-sub); color: var(--text-sub);
+            padding: 5px 10px; font-family: 'JetBrains Mono'; cursor: pointer; pointer-events: auto;
+            transition: all 0.2s; margin-left: 20px;
+        }
+        #bag-btn:hover { border-color: var(--ark-orange); color: var(--ark-orange); box-shadow: 0 0 10px var(--ark-orange-dim); }
+
+        /* 对话框卡片 */
+        #dialog-card {
+            position: absolute; bottom: 8%; width: 75%; max-width: 1000px; height: 400px;
+            background: var(--bg-panel); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border-radius: 12px; border-bottom: 4px solid var(--ark-orange);
+            box-shadow: 0 20px 80px rgba(0,0,0,0.6);
+            padding: 30px; display: flex; flex-direction: column;
+            transform: translateZ(50px); opacity: 0; transition: opacity 0.5s;
+        }
+
+        #dialog-card::before {
+            content: "PRTS_LOG_ACTIVE"; position: absolute; top: -20px; left: 0;
+            font-size: 0.7rem; color: var(--text-sub); background: var(--bg-deep); padding: 2px 6px;
+        }
+
+        #text-area {
+            flex-grow: 1; font-size: 1.1rem; line-height: 1.8; color: var(--text-main);
+            overflow-y: auto; white-space: pre-wrap; margin-bottom: 20px; padding-right: 10px;
+        }
+        #text-area::-webkit-scrollbar { width: 4px; }
+        #text-area::-webkit-scrollbar-thumb { background: var(--ark-orange); border-radius: 2px; }
+        #text-area::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+
+        /* 选项区域 */
+        #choices-area { display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-end; align-items: center; }
+
+        .choice-btn {
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-main); padding: 12px 20px; border-radius: 6px;
+            font-family: 'Noto Sans SC'; font-size: 0.95rem; cursor: pointer;
+            transition: all 0.2s var(--ease-ark); min-width: 120px; text-align: center;
+            position: relative; overflow: hidden;
+        }
+        .choice-btn:hover {
+            border-color: var(--ark-orange); background: var(--ark-orange-dim);
+            transform: scale(1.02) translateY(-2px); color: #fff;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        .choice-disabled { opacity: 0.5; cursor: not-allowed; border-style: dashed; }
+
+        /* 背包遮罩层 */
+        #inventory-modal {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(10, 24, 40, 0.95); z-index: 200;
+            display: none; justify-content: center; align-items: center;
+            backdrop-filter: blur(10px);
+        }
+        .inv-panel {
+            width: 600px; max-height: 80%; background: var(--bg-panel); border: 1px solid var(--ark-orange);
+            padding: 30px; border-radius: 8px; overflow-y: auto; position: relative;
+        }
+        .inv-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 15px; border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .inv-item:last-child { border-bottom: none; }
+        .inv-name { font-weight: bold; color: var(--ark-orange); }
+        .inv-desc { font-size: 0.8rem; color: var(--text-sub); }
+        .use-btn {
+            background: var(--text-main); color: var(--bg-deep); border: none;
+            padding: 5px 15px; font-weight: bold; cursor: pointer;
+        }
+        .use-btn:hover { background: var(--ark-orange); color: #fff; }
+        .close-inv {
+            position: absolute; top: 10px; right: 10px; color: var(--text-sub);
+            background: transparent; border: none; cursor: pointer; font-size: 1.2rem;
+        }
+
+        /* 启动层 */
+        #boot-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg-deep); z-index: 9999;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            cursor: pointer; transition: opacity 0.8s;
+        }
+        .boot-logo { font-size: 2rem; font-weight: 900; color: var(--ark-orange); letter-spacing: 8px; animation: pulse 2s infinite; }
+
+        @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+        .cursor { display: inline-block; width: 8px; height: 1.1em; background: var(--ark-orange); margin-left: 5px; vertical-align: text-bottom; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        /* 通知弹窗 */
+        #toast {
+            position: fixed; top: 60px; right: 20px; background: rgba(0,0,0,0.8); border-left: 4px solid var(--ark-orange);
+            padding: 15px 25px; color: #fff; transform: translateX(120%); transition: transform 0.3s var(--ease-ark); z-index: 300;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- 启动画面 -->
+    <div id="boot-screen" onclick="initGame()">
+        <div class="boot-logo">>> TOUCH TO START <<</div>
+        <div style="margin-top:10px; color:var(--text-sub); font-family:'JetBrains Mono'">SYSTEM: PRTS // VER 9.0.2</div>
+    </div>
+
+    <!-- 全局通知 -->
+    <div id="toast">物品已添加</div>
+
+    <!-- 背景装饰 -->
+    <div id="bg-grid"></div>
+    <div class="noise"></div>
+    <div class="scanlines"></div>
+    <!-- 装饰SVG六边形 -->
+    <svg class="hex-deco" width="200" height="200" viewBox="0 0 100 100" style="top:10%; right:15%;">
+        <path d="M50 0 L93.3 25 L93.3 75 L50 100 L6.7 75 L6.7 25 Z" />
+    </svg>
+    <svg class="hex-deco" width="300" height="300" viewBox="0 0 100 100" style="bottom:-50px; left:-50px; opacity:0.05;">
+        <path d="M50 0 L93.3 25 L93.3 75 L50 100 L6.7 75 L6.7 25 Z" />
+    </svg>
+
+    <!-- 顶部新闻 -->
+    <div class="ticker-wrap">
+        <div class="ticker">
+            NEWS: [雷音证券] 电子佛祖算法更新至V4.0，今日功德汇率上涨 2.5%  ///  [锦衣卫] 通报：下城区“龙门客栈”发生非法义体械斗，请市民绕行  ///  [山海公司] “诛仙”单兵外骨骼开启预售  ///  [天气] 燕岭上层：晴，人造天幕亮度 80%；下城区：酸雨，重度污染  ///  [天师府] 警告：近期检测到未授权的灵能波动...
+        </div>
+    </div>
+
+    <!-- HUD 信息 -->
+    <div class="hud hud-tl">
+        <div>NET: SECURE</div>
+        <div>PING: 12ms</div>
+        <div style="margin-top:5px; color:var(--ark-orange)">SERVER: TIAN-SHI-FU_09</div>
+    </div>
+    <div class="hud hud-tr">
+        <div id="clock-real">00:00:00</div>
+        <div style="margin-top:5px;">新历104年 孟夏</div>
+    </div>
+    <div class="hud hud-bl" id="console-log">
+        > System Init...<br>
+        > Loading Assets...<br>
+    </div>
+    <div class="hud hud-br">
+        <div class="bar-viz" style="animation-duration:0.3s"></div>
+        <div class="bar-viz" style="animation-duration:0.5s"></div>
+        <div class="bar-viz" style="animation-duration:0.2s"></div>
+        <div class="bar-viz" style="animation-duration:0.6s"></div>
+        <div class="bar-viz" style="animation-duration:0.4s"></div>
+        <span style="margin-left:5px; line-height:40px;">AUDIO</span>
+    </div>
+
+    <!-- 主界面 -->
+    <div id="main-layer">
+        
+        <div class="status-bar">
+            <div class="sys-title">
+                <h1>SHENZHOU</h1>
+                <span>ARCHIVES PROTOCOL</span>
+            </div>
+            <div class="stats-grid">
+                <div class="stat-item"><span>身份 IDENTITY</span><span id="ui-id">未认证</span></div>
+                <div class="stat-item"><span>位置 LOCATION</span><span id="ui-loc">网络空间</span></div>
+                <div class="stat-item"><span>信用 CREDITS</span><span id="ui-money">0</span></div>
+                <div class="stat-item"><span>体力/理智 VIT/SAN</span><span id="ui-stats">100/100</span></div>
+                <button id="bag-btn" onclick="toggleInventory()">背包 [BAG]</button>
+            </div>
+        </div>
+
+        <div id="dialog-card">
+            <div id="text-area"></div>
+            <div id="choices-area"></div>
+        </div>
+
+    </div>
+
+    <!-- 背包界面 -->
+    <div id="inventory-modal">
+        <div class="inv-panel">
+            <button class="close-inv" onclick="toggleInventory()">×</button>
+            <h2 style="color:var(--ark-orange); border-bottom:1px solid var(--text-sub); padding-bottom:10px;">储物空间</h2>
+            <div id="inv-list">
+                <!-- 物品列表将在此渲染 -->
+                <div style="text-align:center; color:var(--text-sub); padding:20px;">空无一物</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. 游戏数据与状态 (State & DB)
+        // ==========================================
+        const Game = {
+            id: "未认证",
+            loc: "网络空间",
+            money: 0,
+            hp: 100, // 体力
+            san: 100, // 理智
+            inventory: [], // 格式: {id: 'cola', count: 1}
+            flags: {}
+        };
+
+        const ItemDB = {
+            'water': { name: "纯净水", desc: "过滤后的地下水，口感平淡。", effect: (g)=>{g.hp+=5;}, price: 5 },
+            'cola': { name: "合成可乐", desc: "高糖分碳酸饮料，恢复少量体力。", effect: (g)=>{g.hp+=10; g.san+=2;}, price: 8 },
+            'coffee': { name: "黑客咖啡", desc: "甚至能溶解勺子的浓缩咖啡。大幅恢复理智。", effect: (g)=>{g.san+=20; g.hp-=5;}, price: 25 },
+            'potato': { name: "狼牙土豆", desc: "下城区特色小吃，撒满了折耳根和辣椒。", effect: (g)=>{g.hp+=15;}, price: 12 },
+            'stinky_tofu': { name: "油炸臭豆腐", desc: "闻着臭吃着香，恢复大量体力。", effect: (g)=>{g.hp+=25;}, price: 15 },
+            'milk_tea': { name: "珍珠奶茶", desc: "燕岭流行的饮品，据说能带来快乐。", effect: (g)=>{g.san+=10; g.hp+=5;}, price: 30 },
+            'chip_frag': { name: "道箓残片", desc: "非法的生物芯片碎片，直接刺激大脑。", effect: (g)=>{g.san-=20; showToast("你看见了电子幻觉...");}, price: 200 }
+        };
+
+        // ==========================================
+        // 2. 故事节点 (Story Nodes)
+        // ==========================================
+        const Story = {
+            // --- 开场 ---
+            start: {
+                text: "PRTS 神经连接已建立...\n正在从神州生物数据库下载意识备份...\n\n新历104年，神州大地。燕岭之上，皇权与资本筑起了倒悬的空中楼阁；下城区，霓虹与蒸汽掩盖着无数罪恶。\n\n请确认您的社会身份档案：",
+                choices: [
+                    { text: "我是【权贵】", next: "intro_noble", action: ()=>{setStats("皇室旁支", 50000, "燕岭上层", 80, 100)} },
+                    { text: "我是【侠客】", next: "intro_hero", action: ()=>{setStats("流浪侠客", 2000, "下城区", 120, 80)} },
+                    { text: "我是【普通人】", next: "intro_normie", action: ()=>{setStats("首阳社畜", 800, "首阳区", 90, 90)} },
+                    { text: "【未知】接入", next: "intro_unknown", action: ()=>{setStats("非法入侵者", 10000, "深层网络", 50, 50)} }
+                ]
+            },
+
+            // --- 权贵线 ---
+            intro_noble: {
+                text: "身份确认：皇室旁支，三等爵位。\n\n你在燕岭半山腰的“云顶别苑”醒来。窗外是巨大的人造天幕，模拟着完美的清晨阳光。侍从机器人恭敬地递上今天的日程表。\n虽然拥有爵位，但在八大巨头垄断一切的今天，你必须小心翼翼地在权力缝隙中生存。",
+                choices: [
+                    { text: "前往绮澜湖听曲", next: "noble_lake" },
+                    { text: "查看雷音银行账户", next: "noble_bank" },
+                    { text: "乘坐私人电梯下山", next: "hub_shouyang" }
+                ]
+            },
+            noble_lake: {
+                text: "绮澜湖，弯月台。红枫映照着湖面，一位名角儿正在全息投影的伴舞下唱着《赛博霸王别姬》。\n你注意到隔壁包厢里，几个“山海公司”的高管正对着全息地图指指点点，似乎在密谋什么。",
+                choices: [
+                    { text: "动用特权偷听", next: "noble_secret" },
+                    { text: "无视，打赏戏子 (500)", next: "noble_tip", cost: 500 }
+                ]
+            },
+            noble_secret: {
+                text: "你悄悄激活了义眼中的窃听模组。\n“...限制级武器的自毁后门已经部署完毕...这批货会先流入下城区...”\n你听到了不该听的东西。这是山海公司的核心机密。",
+                choices: [
+                    { text: "记录并以此勒索", next: "noble_blackmail" },
+                    { text: "装作无事发生", next: "hub_yanling" }
+                ]
+            },
+            noble_tip: {
+                text: "你打赏了500信用点。戏子向你遥遥一拜。这平静的一天过去了，虽然无聊，但至少安全。",
+                choices: [{ text: "离开", next: "hub_yanling" }]
+            },
+            noble_bank: {
+                text: "你查询了雷音银行的虚拟功德香账户。余额充足，电子佛祖的投影向你微笑：“施主功德无量。”\n但你感到一阵空虚。在这个世界，钱真的能买来极乐吗？",
+                choices: [{ text: "返回", next: "hub_yanling" }]
+            },
+            noble_blackmail: {
+                text: "你试图勒索山海公司。第二天，新闻报道“某皇室旁支因私人穿梭机故障不幸坠落”。\n\n[ BAD END: 知道得太多 ]",
+                choices: [{ text: "重置连接", next: "start" }]
+            },
+
+            // --- 侠客线 ---
+            intro_hero: {
+                text: "身份确认：注册游侠。\n\n你正蹲在下城区“龙门客栈”的霓虹招牌上擦拭你的长刀。这把刀是“山海公司”出品的【非致命·限制型】，刀柄上有生命检测眼球。\n最近下城区不太平，听说有疯子破解了武器的自毁锁。",
+                choices: [
+                    { text: "前往黑市", next: "hero_market" },
+                    { text: "去路边摊吃点东西", next: "food_stall_under" },
+                    { text: "接取悬赏任务", next: "hero_mission" }
+                ]
+            },
+            hero_market: {
+                text: "黑市里鱼龙混杂，充斥着机油味和香料味。你看到了有人在兜售“道箓”——那是一种非法的生物芯片副脑。",
+                choices: [
+                    { text: "购买道箓残片 (200)", next: "buy_chip", cost: 200 },
+                    { text: "离开", next: "hub_under" }
+                ]
+            },
+            buy_chip: {
+                text: "交易完成。你将这块芯片收入囊中。这东西很危险，但也很有价值。",
+                choices: [{ text: "放入背包", next: "hub_under", action: ()=>addItem('chip_frag') }]
+            },
+            hero_mission: {
+                text: "你接到了一个清理“暴走义体者”的任务。目标就在前面的巷子里，正疯狂地用机械臂砸墙。",
+                choices: [
+                    { text: "正面突袭 (-20体力)", next: "hero_combat", action: ()=>updateStat('hp', -20) },
+                    { text: "观察破绽 (-10理智)", next: "hero_combat_smart", action: ()=>updateStat('san', -10) }
+                ]
+            },
+            hero_combat: {
+                text: "一番苦战。你制服了对方，但自己的义肢也受损了。你从他身上搜刮了一些信用点。",
+                choices: [{ text: "领取赏金 (+500)", next: "hub_under", action: ()=>addMoney(500) }]
+            },
+            hero_combat_smart: {
+                text: "你发现了他液压管的泄漏点，一击制敌。干净利落。",
+                choices: [{ text: "领取赏金 (+600)", next: "hub_under", action: ()=>addMoney(600) }]
+            },
+
+            // --- 普通人线 ---
+            intro_normie: {
+                text: "身份确认：神州公民。\n\n早安，打工人。今天是新历104年5月20日。你的闹钟是全息电子佛祖的念经声。\n你需要赶最后一班倒悬地铁去“首阳中心”上班。如果迟到，你的信用点会被扣除。",
+                choices: [
+                    { text: "挤地铁去公司 (-5)", next: "commute_subway", cost: 5 },
+                    { text: "在路边买杯咖啡 (-25)", next: "buy_coffee_start", cost: 25 },
+                    { text: "请病假", next: "normie_sick" }
+                ]
+            },
+            buy_coffee_start: {
+                text: "你买了一杯黑客浓缩咖啡，精神好多了。",
+                choices: [{ text: "去上班", next: "normie_work", action: ()=>{addItem('coffee'); useItem('coffee');} }]
+            },
+            commute_subway: {
+                text: "倒悬地铁里挤满了人。窗外是倒立的高楼大厦，有人在用手机向赛博菩萨烧电子香。你感到一阵眩晕，这就是神州的日常。",
+                choices: [{ text: "抵达公司", next: "normie_work" }]
+            },
+            normie_work: {
+                text: "你在工位上坐了一整天，处理着无尽的数据报表。你的理智在下降。",
+                choices: [
+                    { text: "下班 (+200信用, -30理智)", next: "hub_shouyang", action: ()=>{addMoney(200); updateStat('san', -30);} }
+                ]
+            },
+            normie_sick: {
+                text: "你请了假，扣除了当天的全勤奖。但你在家里躺了一天，感觉理智恢复了不少。",
+                choices: [{ text: "出门逛逛 (+50理智)", next: "hub_shouyang", action: ()=>updateStat('san', 50) }]
+            },
+
+            // --- 未知线 ---
+            intro_unknown: {
+                text: "警告：身份档案丢失。位置无法锁定。\n\n你站在一片白茫茫的数据荒原中。这里似乎是 PRTS 的底层逻辑空间。面前有三个数据传送门。",
+                choices: [
+                    { text: "传送：扶香酒楼", next: "hub_yanling", action: ()=>setLocation("燕岭·扶香酒楼") },
+                    { text: "传送：山海书院", next: "hub_shouyang", action: ()=>setLocation("山海书院") },
+                    { text: "传送：下城区", next: "hub_under", action: ()=>setLocation("下城区·暗巷") }
+                ]
+            },
+
+            // ==========================================
+            // 3. 核心枢纽 (Hubs) - 自由探索区域
+            // ==========================================
+            
+            // --- 燕岭 (上层) ---
+            hub_yanling: {
+                text: "【当前位置：燕岭上层】\n这里是神州的顶点。倒悬的建筑金碧辉煌，空气中弥漫着昂贵的合成香氛。扶香酒楼就在前方，巨大的流光灯球照亮了夜空。",
+                choices: [
+                    { text: "进入扶香酒楼", next: "loc_hotel" },
+                    { text: "购买饮品 (自动售货机)", next: "vending_machine" },
+                    { text: "乘坐磁浮快线去首阳区 (-20)", next: "travel_shouyang", cost: 20 },
+                    { text: "检查背包", next: "hub_yanling", action: toggleInventory }
+                ]
+            },
+            loc_hotel: {
+                text: "扶香酒楼内部，全息舞姬在花瓣舞台上起舞。这里可以购买昂贵的食物，或者打探情报。",
+                choices: [
+                    { text: "点一杯珍珠奶茶 (-30)", next: "hub_yanling", cost: 30, action: ()=>addItem('milk_tea') },
+                    { text: "离开", next: "hub_yanling" }
+                ]
+            },
+
+            // --- 首阳区 (中层/市中心) ---
+            hub_shouyang: {
+                text: "【当前位置：首阳中心区】\n繁华的商业中心，巨大的雷音证券全息佛祖像悬浮在半空。街道干净整洁，巡逻的“鲤鱼”无人机在头顶游弋。",
+                choices: [
+                    { text: "前往山海书院", next: "loc_school" },
+                    { text: "路边摊：买狼牙土豆 (-12)", next: "hub_shouyang", cost: 12, action: ()=>addItem('potato') },
+                    { text: "自动售货机", next: "vending_machine" },
+                    { text: "坐地铁去下城区 (-5)", next: "travel_under", cost: 5 },
+                    { text: "坐缆车去燕岭 (-20)", next: "travel_yanling", cost: 20 }
+                ]
+            },
+            loc_school: {
+                text: "山海书院。门口矗立着巨大的异兽雕像。学生们行色匆匆，大多植入了脑机接口。",
+                choices: [
+                    { text: "闲逛", next: "hub_shouyang" }
+                ]
+            },
+
+            // --- 下城区 (底层) ---
+            hub_under: {
+                text: "【当前位置：下城区】\n终年不见天日，只有霓虹灯和全息广告提供照明。空气潮湿，地面泥泞。这里是法外之地，也是侠客的乐园。",
+                choices: [
+                    { text: "去龙门客栈", next: "loc_inn" },
+                    { text: "路边摊：炸臭豆腐 (-15)", next: "hub_under", cost: 15, action: ()=>addItem('stinky_tofu') },
+                    { text: "自动售货机", next: "vending_machine" },
+                    { text: "偷渡去首阳区 (-10)", next: "travel_shouyang", cost: 10 }
+                ]
+            },
+            loc_inn: {
+                text: "龙门客栈。这里聚集着各种三教九流。你可以在这里休息恢复体力。",
+                choices: [
+                    { text: "休息一晚 (-50)", next: "hub_under", cost: 50, action: ()=>{updateStat('hp', 100); updateStat('san', 100);} },
+                    { text: "离开", next: "hub_under" }
+                ]
+            },
+
+            // --- 通用交互 ---
+            vending_machine: {
+                text: "自动售货机正在嗡嗡作响。屏幕上跳动着各种饮料的广告。",
+                choices: [
+                    { text: "购买纯净水 (5)", next: "vending_buy", cost: 5, action: ()=>addItem('water') },
+                    { text: "购买合成可乐 (8)", next: "vending_buy", cost: 8, action: ()=>addItem('cola') },
+                    { text: "购买黑客咖啡 (25)", next: "vending_buy", cost: 25, action: ()=>addItem('coffee') },
+                    { text: "离开", next: "back_to_hub" }
+                ]
+            },
+            vending_buy: {
+                text: "哐当一声，饮料掉了出来。你把它放入了背包。",
+                choices: [{ text: "继续购买", next: "vending_machine" }, { text: "离开", next: "back_to_hub" }]
+            },
+            food_stall_under: {
+                text: "路边摊的老板是一个装了四条机械臂的大叔，正在熟练地炸着土豆。",
+                choices: [
+                    { text: "买份狼牙土豆 (-12)", next: "hub_under", cost: 12, action: ()=>addItem('potato') },
+                    { text: "不买了", next: "hub_under" }
+                ]
+            },
+
+            // --- 交通跳转逻辑 ---
+            travel_shouyang: { text: "列车穿过层层建筑，抵达首阳区。", choices: [{text:"出站", next:"hub_shouyang", action:()=>setLocation("首阳区")}] },
+            travel_yanling: { text: "缆车缓缓上升，穿过云层，抵达燕岭。", choices: [{text:"出站", next:"hub_yanling", action:()=>setLocation("燕岭上层")}] },
+            travel_under: { text: "电梯急速下降，空气逐渐浑浊，抵达下城区。", choices: [{text:"出站", next:"hub_under", action:()=>setLocation("下城区")}] },
+            
+            // 动态返回上一级 Hub 的逻辑 helper
+            back_to_hub: {
+                text: "你回到了街道上。",
+                choices: [{ text: "确定", next: "hub_shouyang" }] // 默认值，实际会被逻辑覆盖
+            }
+        };
+
+        // ==========================================
+        // 3. 游戏引擎 (Engine)
+        // ==========================================
+        
+        const uiId = document.getElementById('ui-id');
+        const uiLoc = document.getElementById('ui-loc');
+        const uiMoney = document.getElementById('ui-money');
+        const uiStats = document.getElementById('ui-stats');
+        const textDisplay = document.getElementById('text-area');
+        const choicesDisplay = document.getElementById('choices-area');
+        const dialogCard = document.getElementById('dialog-card');
+        const consoleLog = document.getElementById('console-log');
+
+        let currentHub = "hub_shouyang"; // 记录当前所在区域以便返回
+
+        // 初始化
+        function initGame() {
+            document.getElementById('boot-screen').style.opacity = 0;
+            setTimeout(() => document.getElementById('boot-screen').style.display = 'none', 800);
+            
+            // 启动音频环境
+            AudioEngine.init();
+            
+            // 显示对话框
+            dialogCard.style.opacity = 1;
+            
+            // 开始渲染
+            renderScene('start');
+            startClock();
+        }
+
+        // 设置状态
+        function setStats(id, money, loc, hp, san) {
+            Game.id = id;
+            Game.money = money;
+            Game.loc = loc;
+            Game.hp = hp;
+            Game.san = san;
+            updateUI();
+        }
+        function setLocation(loc) { Game.loc = loc; updateUI(); }
+        function addMoney(amount) { 
+            Game.money += amount; 
+            showToast(amount > 0 ? `获得 ${amount} 信用点` : `花费 ${-amount} 信用点`);
+            updateUI(); 
+            if(amount < 0) AudioEngine.playPay();
+        }
+        function updateStat(type, val) {
+            Game[type] = Math.min(100, Math.max(0, Game[type] + val));
+            updateUI();
+            const name = type==='hp'?'体力':'理智';
+            const sign = val>0?'+':'';
+            showToast(`${name} ${sign}${val}`);
+        }
+
+        // 物品系统
+        function addItem(itemId) {
+            Game.inventory.push(itemId);
+            showToast(`获得物品: ${ItemDB[itemId].name}`);
+            updateUI();
+        }
+        function useItem(index) {
+            const itemId = Game.inventory[index];
+            if(!itemId) return;
+            
+            // 执行效果
+            ItemDB[itemId].effect(Game);
+            
+            // 移除
+            Game.inventory.splice(index, 1);
+            showToast(`使用了 ${ItemDB[itemId].name}`);
+            
+            // 刷新背包界面
+            renderInventory();
+            updateUI();
+        }
+        function toggleInventory() {
+            const modal = document.getElementById('inventory-modal');
+            if(modal.style.display === 'flex') {
+                modal.style.display = 'none';
+            } else {
+                modal.style.display = 'flex';
+                renderInventory();
+            }
+        }
+        function renderInventory() {
+            const list = document.getElementById('inv-list');
+            list.innerHTML = '';
+            if(Game.inventory.length === 0) {
+                list.innerHTML = '<div style="text-align:center; color:var(--text-sub); padding:20px;">背包为空</div>';
+                return;
+            }
+            Game.inventory.forEach((itemId, idx) => {
+                const item = ItemDB[itemId];
+                const div = document.createElement('div');
+                div.className = 'inv-item';
+                div.innerHTML = `
+                    <div>
+                        <div class="inv-name">${item.name}</div>
+                        <div class="inv-desc">${item.desc}</div>
+                    </div>
+                    <button class="use-btn" onclick="useItem(${idx})">使用</button>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        // UI 更新
+        function updateUI() {
+            uiId.innerText = Game.id;
+            uiLoc.innerText = Game.loc;
+            uiMoney.innerText = Game.money;
+            uiStats.innerText = `${Game.hp}/${Game.san}`;
+        }
+
+        // 场景渲染
+        async function renderScene(key) {
+            // 记录当前Hub，用于返回逻辑
+            if(key.includes("hub_")) currentHub = key;
+            // 特殊处理返回按钮
+            if(key === "back_to_hub") {
+                renderScene(currentHub);
+                return;
+            }
+
+            const scene = Story[key];
+            if(!scene) return console.error("Missing scene: " + key);
+
+            // 执行场景前置Action
+            // 注意：已经在choice点击时执行了action，这里主要处理进入场景的自动逻辑（如果有）
+
+            // 清理
+            choicesDisplay.innerHTML = '';
+            textDisplay.innerHTML = '';
+
+            // 打字机
+            await typeWriter(scene.text);
+
+            // 生成选项
+            scene.choices.forEach((c, i) => {
+                const btn = document.createElement('button');
+                btn.className = 'choice-btn';
+                
+                // 检查金钱
+                let canAfford = true;
+                if(c.cost && Game.money < c.cost) canAfford = false;
+
+                let btnText = c.text;
+                if(!canAfford) {
+                    btn.classList.add('choice-disabled');
+                    btnText += " [余额不足]";
+                }
+
+                btn.innerText = btnText;
+                
+                btn.onclick = () => {
+                    if(!canAfford) return;
+                    if(c.cost) addMoney(-c.cost);
+                    if(c.action) c.action();
+                    AudioEngine.playClick();
+                    renderScene(c.next);
+                };
+
+                // 动画延迟
+                btn.style.opacity = 0;
+                btn.style.transform = "translateY(10px)";
+                choicesDisplay.appendChild(btn);
+                setTimeout(() => {
+                    btn.style.opacity = 1;
+                    btn.style.transform = "translateY(0)";
+                }, i * 50);
+            });
+        }
+
+        function typeWriter(text) {
+            return new Promise(resolve => {
+                const cursor = document.createElement('span');
+                cursor.className = 'cursor';
+                textDisplay.appendChild(cursor);
+                
+                let i = 0;
+                function step() {
+                    if (i < text.length) {
+                        const char = text.charAt(i);
+                        const span = document.createElement('span');
+                        span.textContent = char;
+                        cursor.before(span);
+                        
+                        if(i % 3 === 0) AudioEngine.playType();
+                        
+                        // 自动滚动到底部
+                        textDisplay.scrollTop = textDisplay.scrollHeight;
+                        
+                        i++;
+                        setTimeout(step, 15);
+                    } else {
+                        cursor.remove();
+                        resolve();
+                    }
+                }
+                step();
+            });
+        }
+
+        // 弹窗
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.style.transform = "translateX(0)";
+            setTimeout(() => {
+                toast.style.transform = "translateX(120%)";
+            }, 3000);
+        }
+
+        // ==========================================
+        // 4. 音频引擎 (Audio Engine) - BGM 修改版
+        // ==========================================
+        const AudioEngine = {
+            ctx: null,      // 用于播放音效 (SFX)
+            bgm: null,      // 用于播放背景音乐
+
+            init() {
+                // 1. 初始化 SFX 环境 (尝试创建 AudioContext)
+                try {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioContext();
+                } catch(e) { 
+                    console.log("Web Audio API not supported"); 
+                }
+
+                // 2. 初始化并播放 BGM
+                this.startBGM();
+            },
+
+            startBGM() {
+                // 的网易云直链
+                const bgmUrl = "https://m701.music.126.net/20251209000142/19882356db16af003a035a3bb243e303/jdymusic/obj/wo3DlMOGwrbDjj7DisKw/34566764345/adfd/3475/61d6/83d96809a2f866d5383868fb26a68a51.mp3";
+                
+                this.bgm = new Audio(bgmUrl);
+                this.bgm.loop = true;  // 设置循环播放
+                this.bgm.volume = 0.5; // 设置音量 (0.0 - 1.0)
+                
+                // 尝试播放 
+                this.bgm.play().catch(error => {
+                    console.warn("BGM播放被阻止，等待用户点击:", error);
+                });
+            },
+
+            // --- SFX 音效 ---
+            playType() {
+                if(!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square'; 
+                osc.frequency.value = 800;
+                gain.gain.value = 0.02;
+                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.05);
+                osc.connect(gain); 
+                gain.connect(this.ctx.destination);
+                osc.start(); 
+                osc.stop(this.ctx.currentTime + 0.05);
+            },
+
+            playClick() {
+                if(!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine'; 
+                osc.frequency.value = 1200;
+                gain.gain.value = 0.05;
+                gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.1);
+                osc.connect(gain); 
+                gain.connect(this.ctx.destination);
+                osc.start(); 
+                osc.stop(this.ctx.currentTime + 0.1);
+            },
+
+            playPay() {
+                if(!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth'; 
+                osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(1000, this.ctx.currentTime + 0.1);
+                gain.gain.value = 0.05; 
+                gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime+0.2);
+                osc.connect(gain); 
+                gain.connect(this.ctx.destination);
+                osc.start(); 
+                osc.stop(this.ctx.currentTime+0.2);
+            }
+        };
+
+        // ==========================================
+        // 5. 视觉特效 (Visual FX)
+        // ==========================================
+        
+        // 实时时钟
+        function startClock() {
+            setInterval(() => {
+                const now = new Date();
+                document.getElementById('clock-real').innerText = now.toLocaleTimeString('en-GB');
+                
+                // 模拟Log
+                if(Math.random() > 0.7) {
+                    const logs = ["Syncing...", "Data stream stable", "Check bio-sign", "Ping: 14ms", "Updating localized assets"];
+                    const logEl = document.getElementById('console-log');
+                    logEl.innerHTML += `> ${logs[Math.floor(Math.random()*logs.length)]}<br>`;
+                    if(logEl.childElementCount > 6) logEl.removeChild(logEl.firstChild);
+                }
+            }, 1000);
+        }
+
+        // 鼠标视差
+        document.addEventListener('mousemove', (e) => {
+            const x = (window.innerWidth/2 - e.clientX) / 80;
+            const y = (window.innerHeight/2 - e.clientY) / 80;
+            document.getElementById('main-layer').style.transform = `rotateY(${x}deg) rotateX(${-y}deg)`;
+            document.getElementById('bg-grid').style.transform = `perspective(500px) rotateX(20deg) translate(${x*-2}px, ${y*-2}px) scale(1.5)`;
+        });
+
+    </script>
+</body>
+
+</html>
+
+
