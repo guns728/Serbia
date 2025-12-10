@@ -1,0 +1,1218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <!-- 允许用户缩放，防止某些手机强制锁定比例导致显示不全 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SHENZHOU // PRTS TERMINAL V5.0</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            /* --- 经典配色保持不变 --- */
+            --bg-deep: #0A1828;
+            --bg-panel: rgba(30, 42, 60, 0.9);
+            --bg-overlay: rgba(0, 0, 0, 0.85);
+            --ark-orange: #FF6B35;
+            --ark-orange-dim: rgba(255, 107, 53, 0.2);
+            --ark-blue: #2CA8FF;
+            --ark-red: #FF3535;
+            --text-main: #E6E6E6;
+            --text-sub: #8F9BB3;
+            --grid-line: rgba(255, 255, 255, 0.04);
+            --ease-ark: cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            margin: 0;
+            height: 100vh;
+            width: 100vw;
+            background-color: var(--bg-deep);
+            color: var(--text-main);
+            font-family: 'Noto Sans SC', sans-serif;
+            overflow: hidden; /* 禁止原生滚动，完全靠缩放 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            user-select: none;
+        }
+
+        /* =========================================================
+           【核心适配层】
+           强制所有内容在一个固定的 PC 尺寸容器内渲染
+           然后通过 JS 整体缩放这个容器
+           ========================================================= */
+        #app-scaler {
+            position: relative;
+            width: 1920px;  /* 设定标准设计宽度 */
+            height: 1080px; /* 设定标准设计高度 */
+            flex-shrink: 0;
+            transform-origin: center center; /* 从中心缩放 */
+            perspective: 1200px; /* 3D 透视保留 */
+            overflow: hidden; /* 防止溢出 */
+            /* 居中显示 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* 以下CSS完全保留原设计，不做任何流式布局修改 */
+
+        /* --- 背景视觉工程 --- */
+        #bg-grid {
+            position: absolute;
+            top: -50%; left: -50%; width: 200%; height: 200%;
+            background-image: 
+                linear-gradient(var(--grid-line) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+            background-size: 60px 60px;
+            z-index: -10;
+            transform: perspective(500px) rotateX(20deg) scale(1.5);
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        .scanlines {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(to bottom, rgba(255,255,255,0) 50%, rgba(0,0,0,0.05) 50%);
+            background-size: 100% 3px;
+            pointer-events: none; z-index: 100; opacity: 0.5;
+            animation: scanScroll 8s linear infinite;
+        }
+        @keyframes scanScroll { from { background-position: 0 0; } to { background-position: 0 100%; } }
+
+        /* --- 装饰性 SVG --- */
+        .hex-deco { position: absolute; fill: none; stroke: var(--ark-orange); stroke-width: 1; opacity: 0.1; z-index: -8; }
+
+        /* --- 顶部新闻条 --- */
+        .ticker-wrap {
+            position: absolute; top: 0; width: 100%; height: 28px;
+            background: rgba(10, 20, 30, 0.95); border-bottom: 1px solid var(--ark-orange);
+            overflow: hidden; white-space: nowrap; z-index: 50;
+            display: flex; align-items: center;
+            font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--ark-orange);
+        }
+        .ticker { display: inline-block; padding-left: 100%; animation: ticker 60s linear infinite; }
+        @keyframes ticker { 0% { transform: translate3d(0, 0, 0); } 100% { transform: translate3d(-100%, 0, 0); } }
+
+        /* --- HUD --- */
+        .hud { position: absolute; z-index: 40; font-family: 'JetBrains Mono'; font-size: 0.7rem; color: var(--text-sub); pointer-events: none; }
+        .hud-tl { top: 50px; left: 20px; border-left: 2px solid var(--ark-orange); padding-left: 10px; }
+        .hud-tr { top: 50px; right: 20px; text-align: right; border-right: 2px solid var(--ark-orange); padding-right: 10px; }
+        
+        .hud-bl { 
+            bottom: 20px; left: 20px; 
+            max-height: 200px; width: 300px;
+            overflow: hidden; 
+            display: flex; flex-direction: column; justify-content: flex-end;
+            mask-image: linear-gradient(to bottom, transparent, black 20%);
+            -webkit-mask-image: linear-gradient(to bottom, transparent, black 20%);
+        }
+
+        /* --- 主界面层 --- */
+        #main-layer {
+            width: 100%; height: 100%;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            transform-style: preserve-3d; transition: transform 0.1s ease-out;
+            z-index: 10;
+        }
+
+        /* 顶部状态栏 */
+        .status-bar {
+            position: absolute; top: 10%; left: 10%; width: 80%;
+            display: flex; justify-content: space-between; align-items: flex-end;
+            border-bottom: 1px solid rgba(255,255,255,0.15); padding-bottom: 10px;
+            transform: translateZ(20px);
+        }
+        .sys-title h1 { margin: 0; font-size: 3.5rem; line-height: 0.9; font-weight: 900; letter-spacing: -2px; color: #fff; }
+        .sys-title span { font-size: 0.8rem; color: var(--ark-orange); letter-spacing: 5px; }
+        
+        .stats-grid { 
+            display: flex; gap: 20px; text-align: right; 
+            font-size: 0.85rem; font-family: 'Noto Sans SC'; color: var(--text-sub); 
+            align-items: center;
+        }
+        .stat-item { display: flex; flex-direction: column; }
+        .stat-item span:first-child { font-size: 0.7rem; color: var(--ark-orange); margin-bottom: 2px; }
+        .stat-item span:last-child { font-weight: 700; color: #fff; }
+
+        /* 终端入口按钮 */
+        .term-entry-btn {
+            background: rgba(255, 107, 53, 0.1); 
+            border: 1px solid var(--ark-orange); 
+            color: var(--ark-orange);
+            font-family: 'JetBrains Mono'; font-weight: bold; font-size: 0.8rem;
+            padding: 6px 15px; cursor: pointer; pointer-events: auto;
+            transition: all 0.2s ease;
+            height: fit-content;
+            letter-spacing: 1px;
+            clip-path: polygon(10% 0, 100% 0, 100% 70%, 90% 100%, 0 100%, 0 30%);
+        }
+        .term-entry-btn:hover {
+            background: var(--ark-orange); color: #fff;
+            box-shadow: 0 0 15px var(--ark-orange-dim);
+            transform: translateY(-2px);
+        }
+
+        /* 对话框卡片 */
+        #dialog-card {
+            position: absolute; bottom: 8%; width: 75%; max-width: 1000px; height: 400px;
+            background: var(--bg-panel); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border-radius: 4px; border-bottom: 4px solid var(--ark-orange);
+            box-shadow: 0 20px 80px rgba(0,0,0,0.6);
+            padding: 30px; display: flex; flex-direction: column;
+            transform: translateZ(50px); opacity: 0; transition: opacity 0.5s;
+        }
+
+        #dialog-card::before {
+            content: "PRTS_LOG_ACTIVE"; position: absolute; top: -20px; left: 0;
+            font-size: 0.7rem; color: var(--text-sub); background: var(--bg-deep); padding: 2px 6px;
+        }
+
+        #text-area {
+            flex-grow: 1; font-size: 1.1rem; line-height: 1.8; color: var(--text-main);
+            overflow-y: auto; white-space: pre-wrap; margin-bottom: 20px; padding-right: 10px;
+        }
+        #text-area::-webkit-scrollbar { width: 4px; }
+        #text-area::-webkit-scrollbar-thumb { background: var(--ark-orange); border-radius: 2px; }
+        #text-area::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+
+        #choices-area { display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-end; align-items: center; }
+
+        .choice-btn {
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-main); padding: 12px 20px; border-radius: 2px;
+            font-family: 'Noto Sans SC'; font-size: 0.95rem; cursor: pointer;
+            transition: all 0.2s var(--ease-ark); min-width: 120px; text-align: center;
+            position: relative; overflow: hidden; pointer-events: auto;
+        }
+        .choice-btn:hover, .choice-btn:active {
+            border-color: var(--ark-orange); background: var(--ark-orange-dim);
+            transform: scale(1.02) translateY(-2px); color: #fff;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        .choice-disabled { opacity: 0.5; cursor: not-allowed; border-style: dashed; }
+        
+        /* 战斗日志样式 */
+        .combat-log { font-family: 'JetBrains Mono'; font-size: 0.9rem; margin: 5px 0; border-left: 2px solid; padding-left: 10px; }
+        .combat-player { border-color: #ffeb3b; color: #fff; }
+        .combat-enemy { border-color: var(--ark-red); color: #ff8a8a; }
+        .combat-win { border-color: #4CAF50; color: #4CAF50; font-weight:bold; margin-top:10px;}
+        .combat-dmg { color: var(--ark-red); font-weight: bold; }
+        .combat-crit { color: var(--ark-orange); font-weight: 900; font-size: 1.1em; }
+
+        /* --- 全能终端 UI (重构版) --- */
+        .modal-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(10, 24, 40, 0.95); z-index: 200;
+            display: none; justify-content: center; align-items: center;
+            backdrop-filter: blur(10px);
+        }
+        .terminal-panel {
+            width: 900px; height: 600px; 
+            background: rgba(15, 25, 35, 0.98);
+            border: 1px solid var(--text-sub);
+            display: grid; grid-template-columns: 200px 1fr;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            position: relative;
+        }
+        .terminal-panel::after {
+            content: ''; position: absolute; top: 0; left: 200px; bottom: 0; width: 1px;
+            background: linear-gradient(to bottom, transparent, var(--ark-orange), transparent);
+            opacity: 0.3;
+        }
+        
+        /* 侧边栏 */
+        .term-sidebar {
+            background: rgba(0,0,0,0.2); 
+            padding: 40px 0; display: flex; flex-direction: column; gap: 0;
+        }
+        .term-btn {
+            background: transparent; border: none; border-left: 3px solid transparent;
+            color: var(--text-sub); padding: 15px 25px; 
+            text-align: left; font-family: 'JetBrains Mono'; font-size: 1rem;
+            cursor: pointer; transition: 0.3s;
+        }
+        .term-btn:hover { color: #fff; background: rgba(255,255,255,0.02); }
+        .term-btn.active {
+            border-left-color: var(--ark-orange);
+            color: var(--ark-orange);
+            background: linear-gradient(90deg, var(--ark-orange-dim), transparent);
+            font-weight: bold;
+        }
+
+        /* 终端内容区 */
+        .term-content { 
+            padding: 40px; overflow-y: auto; position: relative; 
+            background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 100% 30px;
+        }
+        .term-header { 
+            font-size: 1.8rem; font-weight: 900; color: #fff; 
+            border-bottom: 1px solid var(--text-sub); 
+            padding-bottom: 15px; margin-bottom: 25px;
+            display: flex; justify-content: space-between; align-items: flex-end;
+        }
+        .term-header span { font-size: 0.8rem; color: var(--ark-orange); letter-spacing: 2px; font-family: 'JetBrains Mono'; }
+        .close-term { position: absolute; top: 20px; right: 20px; font-size: 1.5rem; cursor: pointer; color: var(--text-sub); border: none; background: transparent; z-index:10; }
+
+        /* 卡片与网格 */
+        .data-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); padding: 20px; margin-bottom: 15px; border-radius: 2px; }
+        .attr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .attr-item { display: flex; flex-direction: column; }
+        .attr-label { font-size: 0.75rem; color: var(--ark-orange); font-family: 'JetBrains Mono'; }
+        .attr-val { font-size: 1.1rem; color: #fff; }
+        .progress-track { width: 100%; height: 4px; background: rgba(255,255,255,0.1); margin-top: 5px; }
+        .progress-fill { height: 100%; transition: width 0.3s; }
+
+        /* 背包网格 */
+        .inventory-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px; }
+        .item-card {
+            background: rgba(30, 42, 60, 0.6); border: 1px solid rgba(255,255,255,0.1);
+            padding: 15px; display: flex; flex-direction: column; justify-content: space-between;
+            height: 150px; transition: 0.2s; position: relative; overflow: hidden;
+        }
+        .item-card.equipped { border-color: var(--ark-blue); box-shadow: inset 0 0 10px rgba(44, 168, 255, 0.2); }
+        .item-card:hover { border-color: var(--ark-orange); transform: translateY(-2px); background: rgba(30, 42, 60, 0.9); }
+        .item-name { color: var(--ark-orange); font-weight: bold; margin-bottom: 5px; font-size:0.9rem;}
+        .item-desc { font-size: 0.75rem; color: var(--text-sub); line-height: 1.4; flex-grow: 1; }
+        
+        /* 任务条 */
+        .mission-row {
+            display: flex; justify-content: space-between; align-items: center;
+            background: linear-gradient(90deg, rgba(255,255,255,0.02), transparent);
+            border-left: 3px solid var(--text-sub); padding: 15px; margin-bottom: 10px;
+        }
+        .mission-row.active { border-left-color: var(--ark-orange); background: linear-gradient(90deg, var(--ark-orange-dim), transparent); }
+
+        /* 修炼动画 */
+        .cult-container { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; }
+        .cult-viz-wrap { position: relative; width: 200px; height: 200px; display: flex; align-items: center; justify-content: center; margin-bottom: 30px; }
+        .orbit-circle {
+            position: absolute; width: 100%; height: 100%; border-radius: 50%;
+            border: 2px dashed var(--text-sub);
+            animation: spin 20s linear infinite;
+        }
+        .orbit-circle::after {
+            content: ''; position: absolute; top: -5px; left: 50%; width: 10px; height: 10px;
+            background: var(--ark-orange); border-radius: 50%; box-shadow: 0 0 10px var(--ark-orange);
+        }
+        .inner-energy {
+            position: absolute; width: 70%; height: 70%; border-radius: 50%;
+            background: radial-gradient(circle, rgba(255,107,53,0.3) 0%, transparent 70%);
+            border: 1px solid var(--ark-orange-dim);
+            box-shadow: 0 0 30px var(--ark-orange-dim);
+            animation: pulse 3s infinite ease-in-out;
+            display: flex; align-items: center; justify-content: center;
+            flex-direction: column; color: #fff;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        @keyframes pulse { 0%, 100% { transform: scale(0.95); opacity: 0.8; } 50% { transform: scale(1.05); opacity: 1; } }
+
+        /* 角色创建 */
+        #char-creation-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg-deep); z-index: 500;
+            display: flex; justify-content: center; align-items: center;
+            backdrop-filter: blur(5px);
+        }
+        .creation-panel {
+            width: 800px; max-width: 95%; max-height: 90vh; overflow-y: auto;
+            background: var(--bg-panel); border: 1px solid var(--ark-orange);
+            padding: 40px; box-shadow: 0 0 30px rgba(0,0,0,0.8);
+        }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 30px; }
+        .form-group { display: flex; flex-direction: column; gap: 5px; }
+        .form-group label { font-family: 'JetBrains Mono'; font-size: 0.7rem; color: var(--ark-orange); letter-spacing: 1px; }
+        .form-group input, .form-group select {
+            background: rgba(0,0,0,0.3); border: none; border-bottom: 1px solid var(--text-sub);
+            color: #fff; padding: 10px; font-family: 'Noto Sans SC'; font-size: 1rem;
+        }
+
+        #boot-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg-deep); z-index: 9999;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            cursor: pointer; transition: opacity 0.8s;
+        }
+        .boot-logo { font-size: 2rem; font-weight: 900; color: var(--ark-orange); letter-spacing: 8px; animation: pulse 2s infinite; }
+
+        #toast {
+            position: fixed; top: 70px; right: 20px; background: rgba(0,0,0,0.95); border-left: 4px solid var(--ark-orange);
+            padding: 15px 25px; color: #fff; transform: translateX(120%); transition: transform 0.3s var(--ease-ark); z-index: 300;
+        }
+
+        /* 滚动条美化 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.3); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb { background: var(--ark-orange); border-radius: 3px; opacity: 0.8; }
+        * { scrollbar-width: thin; scrollbar-color: var(--ark-orange) rgba(0, 0, 0, 0.3); }
+
+    </style>
+</head>
+<body>
+    
+    <!-- 所有的原游戏内容都被包裹在这个 ID 里 -->
+    <div id="app-scaler">
+
+        <div id="boot-screen" onclick="initGame()">
+            <div class="boot-logo">>> TOUCH TO START <<</div>
+            <div style="margin-top:10px; color:var(--text-sub); font-family:'JetBrains Mono'">SYSTEM: PRTS // VER 5.0.0</div>
+        </div>
+
+        <!-- 角色创建 -->
+        <div id="char-creation-layer" style="display:none;">
+            <div class="creation-panel">
+                <h2 class="sys-title">档案录入 // <span style="font-size:0.6em; color:var(--ark-orange)">NEW_ENTRY</span></h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>代号 / NAME</label>
+                        <input type="text" id="inp-name" placeholder="输入代号..." maxlength="12">
+                    </div>
+                    <div class="form-group">
+                        <label>性别 / SEX</label>
+                        <select id="inp-sex"><option value="男">男</option><option value="女">女</option></select>
+                    </div>
+                    <div class="form-group">
+                        <label>年龄 / AGE</label>
+                        <input type="number" id="inp-age" value="24" min="16" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label>性格倾向 / PERSONALITY</label>
+                        <select id="inp-personality">
+                            <option value="冷静">冷静 (理智消耗减缓)</option>
+                            <option value="狂暴">狂暴 (暴击率提升)</option>
+                            <option value="腹黑">腹黑 (交易价格优惠)</option>
+                            <option value="正义">正义 (声望获取提升)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>出身背景 / BACKGROUND</label>
+                        <select id="inp-bg" onchange="updateFactionOptions()"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>所属势力 / FACTION</label>
+                        <select id="inp-faction"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>血脉源头 / BLOODLINE</label>
+                        <select id="inp-blood">
+                            <option value="human_norm">未觉醒 (均衡)</option>
+                            <option value="saint">东方圣血 (精神+)</option>
+                            <option value="demon">西方魔血 (体质+)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>初始异能 / ABILITY</label>
+                        <input type="text" id="inp-ability" placeholder="例：控火术...">
+                    </div>
+                </div>
+                <div class="creation-footer" style="margin-top:20px; text-align:right;">
+                    <div id="creation-error" style="color:var(--ark-orange); font-size:0.8rem; height:20px;"></div>
+                    <button class="choice-btn" onclick="submitCharacter()">确认档案 [CONFIRM]</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 全能终端 UI -->
+        <div id="terminal-modal" class="modal-overlay">
+            <div class="terminal-panel">
+                <button class="close-term" onclick="toggleTerminal()">×</button>
+                <div class="term-sidebar">
+                    <button class="term-btn active" onclick="switchTermTab('status')">状态 STATUS</button>
+                    <button class="term-btn" onclick="switchTermTab('bag')">背包 BAG</button>
+                    <button class="term-btn" onclick="switchTermTab('missions')">任务 MISSION</button>
+                    <button class="term-btn" onclick="switchTermTab('cultivation')">修炼 CULT</button>
+                    <button class="term-btn" onclick="switchTermTab('system')">系统 SYSTEM</button>
+                </div>
+                <div class="term-content" id="term-content-area">
+                    <!-- JS 动态渲染 -->
+                </div>
+            </div>
+        </div>
+
+        <div id="toast">系统通知</div>
+
+        <div id="bg-grid"></div>
+        <div class="scanlines"></div>
+        <svg class="hex-deco" width="200" height="200" viewBox="0 0 100 100" style="top:10%; right:15%;">
+            <path d="M50 0 L93.3 25 L93.3 75 L50 100 L6.7 75 L6.7 25 Z" />
+        </svg>
+
+        <div class="ticker-wrap">
+            <div class="ticker">
+                NEWS: [雷音证券] 电子佛祖算法更新至V4.0，今日功德汇率上涨 2.5%  ///  [锦衣卫] 通报：下城区“龙门客栈”发生非法义体械斗，请市民绕行  ///  [山海公司] “诛仙”单兵外骨骼开启预售...
+            </div>
+        </div>
+
+        <div class="hud hud-tl">
+            <div>NET: SECURE</div>
+            <div>PING: 12ms</div>
+            <div style="margin-top:5px; color:var(--ark-orange)">SERVER: TIAN-SHI-FU_09</div>
+        </div>
+        <div class="hud hud-tr">
+            <div id="clock-real">00:00:00</div>
+            <div style="margin-top:5px;">新历104年 孟夏</div>
+        </div>
+        <div class="hud hud-bl" id="console-log">
+            > System Init...<br>
+        </div>
+
+        <!-- 主界面 -->
+        <div id="main-layer">
+            <div class="status-bar">
+                <div class="sys-title">
+                    <h1>SHENZHOU</h1>
+                    <span>ARCHIVES PROTOCOL</span>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-item"><span>身份 IDENTITY</span><span id="ui-id">未认证</span></div>
+                    <div class="stat-item"><span>位置 LOCATION</span><span id="ui-loc">网络空间</span></div>
+                    <div class="stat-item"><span>信用 CREDITS</span><span id="ui-money">0</span></div>
+                    <div class="stat-item"><span>体力/理智 VIT/SAN</span><span id="ui-stats">100/100</span></div>
+                    <button class="term-entry-btn" onclick="toggleTerminal()">[ 终端 TERMINAL ]</button>
+                </div>
+            </div>
+
+            <div id="dialog-card">
+                <div id="text-area"></div>
+                <div id="choices-area"></div>
+            </div>
+        </div>
+    
+    </div> <!-- #app-scaler 结束 -->
+
+    <script>
+        // ==========================================
+        // 0. 同比例缩放脚本 (The Magic Script)
+        // ==========================================
+        function fitScreen() {
+            const scaler = document.getElementById('app-scaler');
+            const designWidth = 1920; // 我们设定的标准PC设计宽度
+            
+            // 计算缩放比例：用当前屏幕宽度 / 设计宽度
+            // 如果是手机竖屏，这个数字会很小（比如 0.3），整个界面会完整缩放进去
+            const scale = window.innerWidth / designWidth;
+            
+            scaler.style.transform = `scale(${scale})`;
+            
+            // 高度修正：因为 scale 会导致上下留白，我们需要调整 body 布局让它垂直居中
+            // 由于 body 是 flex 布局，transform-origin center center 会自动居中
+        }
+
+        // 初始化运行一次，窗口变化时也运行
+        fitScreen();
+        window.addEventListener('resize', fitScreen);
+
+        // ==========================================
+        // 1. 数据与定义
+        // ==========================================
+        const uiId = document.getElementById('ui-id');
+        const uiLoc = document.getElementById('ui-loc');
+        const uiMoney = document.getElementById('ui-money');
+        const uiStats = document.getElementById('ui-stats');
+        const textDisplay = document.getElementById('text-area');
+        const choicesDisplay = document.getElementById('choices-area');
+        const consoleLog = document.getElementById('console-log');
+        
+        let currentHub = "hub_shouyang"; 
+
+        const CharData = {
+            backgrounds: {
+                'commoner': { name: "普通市民", allowedFactions: ['none', 'leiyin', 'shanhai'] },
+                'noble': { name: "燕岭贵族", allowedFactions: ['shanhai', 'leiyin', 'tianshi'] },
+                'orphan': { name: "下城孤儿", allowedFactions: ['none', 'gang', 'rat'] },
+                'subject': { name: "实验体", allowedFactions: ['none', 'gang', 'un'] },
+                'inspector': { name: "联合国督察", allowedFactions: ['un'] }
+            },
+            factions: {
+                'none': "自由人", 'leiyin': "雷音证券", 'shanhai': "山海公司", 
+                'tianshi': "天师府", 'gang': "下城帮派", 'rat': "地下鼠群", 'un': "联合国督察部"
+            },
+            realms: [
+                { name: "凡人", maxXp: 100, atk: 0 },
+                { name: "D级 觉醒", maxXp: 500, atk: 10 },
+                { name: "C级 掌控", maxXp: 2000, atk: 25 },
+                { name: "B级 威胁", maxXp: 10000, atk: 50 },
+                { name: "A级 灾难", maxXp: 50000, atk: 100 },
+                { name: "S级 毁灭", maxXp: 999999, atk: 200 },
+                { name: "传说 绝伦", maxXp: -1, atk: 500 }
+            ]
+        };
+
+        const ItemDB = {
+            'water': { type: 'use', name: "纯净水", desc: "体力+5", effect: (g)=>{updateStat('hp',5);}, price: 5 },
+            'cola': { type: 'use', name: "合成可乐", desc: "体力+10 理智+2", effect: (g)=>{updateStat('hp',10); updateStat('san',2);}, price: 8 },
+            'coffee': { type: 'use', name: "黑客咖啡", desc: "理智+20 体力-5", effect: (g)=>{updateStat('san',20); updateStat('hp',-5);}, price: 25 },
+            'stinky_tofu': { type: 'use', name: "臭豆腐", desc: "体力+25", effect: (g)=>{updateStat('hp',25);}, price: 15 },
+            'calming_pill': { type: 'use', name: "清心丹", desc: "走火入魔-20", effect: (g)=>{reduceDeviation(20);}, price: 100 },
+            'origin_shard': { type: 'use', name: "源质结晶", desc: "经验+50", effect: (g)=>{addCultivationXp(50);}, price: 500 },
+            'military_stim': { type: 'use', name: "军用兴奋剂", desc: "体力+50 理智-20", effect: (g)=>{updateStat('hp',50); updateStat('san',-20);}, price: 200 },
+            'knife': { type: 'weapon', name: "折叠刀", desc: "攻+5 普通防身具", atk: 5, price: 100 },
+            'baton': { type: 'weapon', name: "电击警棍", desc: "攻+12 联合国制式", atk: 12, price: 500 },
+            'pistol': { type: 'weapon', name: "动能手枪", desc: "攻+25 远程打击", atk: 25, price: 1200 },
+            'blade_shanhai': { type: 'weapon', name: "山海横刀", desc: "攻+40 高频振动刃", atk: 40, price: 3000 },
+            'origin_staff': { type: 'weapon', name: "源质法杖", desc: "攻+55 精神增幅", atk: 55, price: 5000 },
+            'trash': { type: 'misc', name: "电子废料", desc: "可回收", price: 2 },
+            'mech_arm': { type: 'misc', name: "断裂机械臂", desc: "包含昂贵零件", price: 150 },
+            'artifact_ring': { type: 'misc', name: "古老指环", desc: "修仙者遗物", price: 10000 }
+        };
+
+        const defaultGame = {
+            name: "未知", sex: "男", age: 24, background: "commoner", faction: "none", personality: "冷静",
+            money: 100, hp: 100, maxHp: 100, san: 100, maxSan: 100, loc: "网络空间",
+            bloodline: "human_norm", abilityName: "无", equippedWeapon: null,
+            cultivation: { realmIdx: 0, xp: 0, deviation: 0 },
+            inventory: [], flags: {},
+            reputation: { leiyin: 0, shanhai: 0, tianshi: 0, gang: 0, un: 0 },
+            activeMissions: []
+        };
+
+        let Game = JSON.parse(JSON.stringify(defaultGame));
+        let cultLoop = null;
+
+        // ==========================================
+        // 2. 核心逻辑
+        // ==========================================
+        
+        function initGame() {
+            document.getElementById('boot-screen').style.opacity = 0;
+            setTimeout(() => document.getElementById('boot-screen').style.display = 'none', 800);
+            
+            const savedData = localStorage.getItem('shenzhou_save_v5');
+            if (savedData) {
+                try {
+                    const parsed = JSON.parse(savedData);
+                    Game = { ...defaultGame, ...parsed, cultivation: { ...defaultGame.cultivation, ...parsed.cultivation }, reputation: { ...defaultGame.reputation, ...parsed.reputation } };
+                    AudioEngine.init();
+                    enterGameWorld();
+                    logToConsole("Archive loaded successfully.");
+                } catch(e) {
+                    initCharCreation();
+                }
+            } else {
+                initCharCreation();
+            }
+        }
+
+        function saveGame() {
+            localStorage.setItem('shenzhou_save_v5', JSON.stringify(Game));
+        }
+
+        function logToConsole(msg) {
+            consoleLog.innerHTML += `> ${msg}<br>`;
+            consoleLog.scrollTop = consoleLog.scrollHeight;
+        }
+
+        function updateUI() {
+            uiId.innerText = Game.name; 
+            uiLoc.innerText = Game.loc;
+            uiMoney.innerText = Game.money;
+            uiStats.innerText = `${Math.floor(Game.hp)}/${Math.floor(Game.san)}`;
+        }
+
+        function updateStat(type, val) {
+            if (type === 'hp') Game.hp = Math.min(Game.maxHp, Math.max(0, Game.hp + val));
+            if (type === 'san') Game.san = Math.min(Game.maxSan, Math.max(0, Game.san + val));
+            updateUI();
+            saveGame();
+        }
+
+        function startClock() {
+            setInterval(() => {
+                document.getElementById('clock-real').innerText = new Date().toLocaleTimeString('en-GB');
+            }, 1000);
+        }
+
+        function addItem(itemId) {
+            Game.inventory.push(itemId);
+            showToast(`获得: ${ItemDB[itemId].name}`);
+            saveGame();
+        }
+        function removeItem(index) {
+            Game.inventory.splice(index, 1);
+            saveGame();
+            if(document.getElementById('terminal-modal').style.display === 'flex') renderTerminalContent();
+        }
+
+        // --- 终端 UI ---
+        let currentTermTab = 'status';
+
+        function toggleTerminal() {
+            const el = document.getElementById('terminal-modal');
+            el.style.display = el.style.display === 'flex' ? 'none' : 'flex';
+            if(el.style.display === 'flex') {
+                renderTerminalContent();
+                saveGame(); // 打开菜单时自动存档
+            }
+        }
+
+        function switchTermTab(tab) {
+            currentTermTab = tab;
+            document.querySelectorAll('.term-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+            renderTerminalContent();
+        }
+
+        function renderTerminalContent() {
+            const area = document.getElementById('term-content-area');
+            area.innerHTML = '';
+
+            if (currentTermTab === 'status') {
+                const r = CharData.realms[Game.cultivation.realmIdx];
+                const w = Game.equippedWeapon ? ItemDB[Game.equippedWeapon].name : "未装备";
+                
+                let repHtml = '';
+                for(let f in Game.reputation) {
+                    if(Game.reputation[f] > 0) {
+                        repHtml += `
+                        <div style="margin-bottom:8px">
+                            <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:2px">
+                                <span>${CharData.factions[f]}</span>
+                                <span style="color:var(--ark-orange)">${Game.reputation[f]}</span>
+                            </div>
+                            <div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, Game.reputation[f])}%; background:var(--ark-orange)"></div></div>
+                        </div>`;
+                    }
+                }
+
+                area.innerHTML = `
+                    <div class="term-header">个人档案 STATUS <span>ID: ${Date.now().toString().slice(-6)}</span></div>
+                    <div class="status-overview">
+                        <div class="avatar-box" style="width:100px; height:100px; background:#000; border:1px solid var(--ark-orange); display:flex; align-items:center; justify-content:center; color:var(--text-sub); font-size:0.7rem; float:left; margin-right:20px; margin-bottom:10px;">NO SIGNAL</div>
+                        <div class="attr-grid">
+                            <div class="attr-item"><span class="attr-label">代号 CODE</span><span class="attr-val">${Game.name}</span></div>
+                            <div class="attr-item"><span class="attr-label">出身 ORIGIN</span><span class="attr-val">${CharData.backgrounds[Game.background].name}</span></div>
+                            <div class="attr-item"><span class="attr-label">性别/年龄 DATA</span><span class="attr-val">${Game.sex} / ${Game.age}</span></div>
+                            <div class="attr-item"><span class="attr-label">血脉 BLOOD</span><span class="attr-val">${Game.bloodline}</span></div>
+                        </div>
+                        <div style="clear:both"></div>
+                    </div>
+                    <div class="data-card">
+                        <div style="color:var(--text-sub); font-size:0.8rem; margin-bottom:10px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:5px">COMBAT DATA</div>
+                        <div class="attr-grid">
+                            <div class="attr-item"><span class="attr-label">当前境界 REALM</span><span class="attr-val" style="color:var(--ark-orange)">${r.name}</span></div>
+                            <div class="attr-item"><span class="attr-label">觉醒异能 ABILITY</span><span class="attr-val">${Game.abilityName}</span></div>
+                            <div class="attr-item"><span class="attr-label">主武器 WEAPON</span><span class="attr-val">${w}</span></div>
+                        </div>
+                    </div>
+                    <div class="data-card">
+                        <div style="color:var(--text-sub); font-size:0.8rem; margin-bottom:10px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:5px">REPUTATION</div>
+                        ${repHtml || "<div style='color:var(--text-sub); font-size:0.9rem'>暂无势力记录</div>"}
+                    </div>
+                `;
+
+            } else if (currentTermTab === 'bag') {
+                area.innerHTML = `
+                    <div class="term-header">储物空间 INVENTORY <span>CAPACITY: ${Game.inventory.length}/99</span></div>
+                    <div class="inventory-grid">
+                        ${Game.inventory.length === 0 ? '<div style="color:var(--text-sub)">[ 空无一物 ]</div>' : ''}
+                        ${Game.inventory.map((id, idx) => {
+                            const item = ItemDB[id];
+                            let btnText = "查看", btnFunc = "";
+                            if(item.type === 'use') { btnText = "使用 USE"; btnFunc = `useItemInMenu(${idx})`; }
+                            else if(item.type === 'weapon') { btnText = "装备 EQUIP"; btnFunc = `equipWeapon(${idx})`; }
+                            else if(item.type === 'misc') { btnText = "丢弃 DROP"; btnFunc = `removeItem(${idx})`; }
+                            return `
+                            <div class="item-card ${Game.equippedWeapon===id?'equipped':''}">
+                                <div><div class="item-name">${item.name}</div><div class="item-desc">${item.desc}</div></div>
+                                <div class="item-action"><button class="choice-btn" style="padding:4px 10px; font-size:0.75rem; width:100%; margin-top:5px;" onclick="${btnFunc}">${btnText}</button></div>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                `;
+
+            } else if (currentTermTab === 'missions') {
+                area.innerHTML = `<div class="term-header">任务列表 MISSIONS <span>ACTIVE: ${Game.activeMissions.length}</span></div>`;
+                if(Game.activeMissions.length === 0) area.innerHTML += `<div style="text-align:center; padding:40px; color:var(--text-sub); border:1px dashed var(--text-sub)">目前没有正在进行的任务</div>`;
+                else Game.activeMissions.forEach(m => {
+                    area.innerHTML += `<div class="mission-row active"><div style="flex-grow:1"><div class="mission-meta">来源: ${CharData.factions[m.faction]} | 难度: ${"★".repeat(m.diff)}</div><div style="font-weight:bold; font-size:1.1rem; color:#fff">${m.name}</div><div style="font-size:0.9rem; color:var(--text-sub); margin-top:5px">${m.desc}</div></div><div style="text-align:right; margin-left:20px"><div style="color:var(--ark-orange); font-weight:bold; font-family:'JetBrains Mono'">$${m.money}</div><div style="font-size:0.8rem; color:var(--text-sub)">REP +${m.repReward}</div></div></div>`;
+                });
+
+            } else if (currentTermTab === 'cultivation') {
+                const r = CharData.realms[Game.cultivation.realmIdx];
+                const pct = r.maxXp > 0 ? Math.floor((Game.cultivation.xp / r.maxXp)*100) : 100;
+                const dev = Math.floor(Game.cultivation.deviation);
+                let devColor = dev > 40 ? (dev > 70 ? "#FF3535" : "#FF9800") : "#4CAF50";
+
+                area.innerHTML = `
+                    <div class="term-header">内视灵台 CULTIVATION <span>REALM: ${r.name}</span></div>
+                    <div class="cult-container">
+                        <div class="cult-viz-wrap">
+                            <div class="orbit-circle"></div>
+                            <div class="inner-energy"><span style="font-size:1.5rem; font-weight:900; font-family:'JetBrains Mono'">${pct}%</span><span style="font-size:0.6rem; letter-spacing:1px">ENERGY</span></div>
+                        </div>
+                        <div style="text-align:center; color:var(--text-sub); font-size:0.9rem; margin-bottom:5px">当前源质积蓄</div>
+                        <div style="width:100%; max-width:300px; height:4px; background:rgba(255,255,255,0.1); border-radius:2px; overflow:hidden; margin-bottom:20px"><div style="width:${pct}%; height:100%; background:var(--ark-orange); box-shadow:0 0 10px var(--ark-orange)"></div></div>
+                        <div class="risk-bar-container" style="width:100%; max-width:300px;">
+                            <div class="risk-label" style="display:flex; justify-content:space-between; margin-bottom:5px"><span>精神熵 (走火入魔概率)</span><span style="color:${devColor}">${dev}%</span></div>
+                            <div class="progress-track"><div class="progress-fill" style="width:${dev}%; background:${devColor}"></div></div>
+                        </div>
+                        <div style="margin-top:40px; display:flex; gap:15px; width:100%; justify-content:center;">
+                            <button class="choice-btn" style="min-width:120px" onclick="attemptBreakthrough()">试图突破界限</button>
+                            <button class="choice-btn" style="min-width:120px; border-color:var(--text-sub); color:var(--text-sub)" onclick="switchTermTab('bag')">打开背包服用丹药</button>
+                        </div>
+                    </div>
+                `;
+
+            } else if (currentTermTab === 'system') {
+                area.innerHTML = `
+                    <div class="term-header">系统设置 SYSTEM</div>
+                    <div style="display:flex; justify-content:center; align-items:center; height:60%;">
+                         <div style="text-align:center; width:300px;">
+                             <div style="font-size:3rem; color:var(--ark-red); margin-bottom:20px">⚠</div>
+                             <p style="color:var(--text-main); margin-bottom:20px">删除当前设备上的所有进度数据。<br>此操作不可撤销。</p>
+                             <button class="choice-btn" style="background:rgba(255,53,53,0.1); border-color:var(--ark-red); color:var(--ark-red); width:100%" onclick="confirmReset()">确认重置存档</button>
+                         </div>
+                    </div>
+                `;
+            }
+        }
+
+        function useItemInMenu(idx) {
+            const id = Game.inventory[idx];
+            ItemDB[id].effect(Game);
+            if(ItemDB[id].type === 'use') Game.inventory.splice(idx, 1);
+            showToast(`使用: ${ItemDB[id].name}`);
+            saveGame(); renderTerminalContent(); updateUI();
+        }
+
+        function equipWeapon(idx) {
+            const id = Game.inventory[idx];
+            Game.equippedWeapon = id;
+            showToast(`装备: ${ItemDB[id].name}`);
+            saveGame(); renderTerminalContent();
+        }
+
+        function confirmReset() {
+            if(confirm("确定要删除所有进度并重置吗？")) {
+                localStorage.clear();
+                location.reload();
+            }
+        }
+
+        // --- 核心循环 (修炼) ---
+        function startCultivationLoop() {
+            if(cultLoop) clearInterval(cultLoop);
+            cultLoop = setInterval(() => {
+                const r = CharData.realms[Game.cultivation.realmIdx];
+                if(r.maxXp === -1) return;
+                Game.cultivation.xp = Math.min(r.maxXp, Game.cultivation.xp + 1);
+                // 每10秒自动保存一次，防止频繁IO
+                if(new Date().getSeconds() % 10 === 0) saveGame();
+            }, 1000);
+        }
+
+        function addCultivationXp(amt) {
+            const r = CharData.realms[Game.cultivation.realmIdx];
+            if(r.maxXp !== -1) Game.cultivation.xp = Math.min(r.maxXp, Game.cultivation.xp + amt);
+            saveGame();
+        }
+        function reduceDeviation(amt) {
+            Game.cultivation.deviation = Math.max(0, Game.cultivation.deviation - amt);
+            showToast(`精神熵降低了 ${amt}%`);
+            saveGame();
+        }
+        function attemptBreakthrough() {
+            const c = Game.cultivation; const r = CharData.realms[c.realmIdx];
+            if(c.xp < r.maxXp) { showToast("源质积蓄不足"); return; }
+            let chance = 90 - (c.deviation * 0.5);
+            if(Math.random()*100 < chance) {
+                c.realmIdx++; c.xp = 0; c.deviation = Math.max(0, c.deviation - 10);
+                showToast(`突破成功！晋升: ${CharData.realms[c.realmIdx].name}`);
+                AudioEngine.playPay();
+            } else {
+                c.xp = Math.floor(c.xp * 0.5); c.deviation += 10; Game.hp -= 20;
+                showToast("突破失败！体力-20");
+            }
+            saveGame(); renderTerminalContent(); updateUI();
+        }
+
+        // --- 战斗系统 ---
+        const CombatEngine = {
+            enemy: null,
+            start(name, hp, atk, money, exp) {
+                this.enemy = { name, hp, maxHp: hp, atk, money, exp };
+                renderScene('combat_mode');
+            },
+            playerAttack() {
+                let atk = 10 + CharData.realms[Game.cultivation.realmIdx].atk;
+                if(Game.equippedWeapon) atk += ItemDB[Game.equippedWeapon].atk;
+                if(Game.bloodline === 'demon') atk += 5;
+                
+                let isCrit = Math.random() < (Game.personality === '狂暴' ? 0.2 : 0.1);
+                let dmg = Math.floor(atk * (0.8 + Math.random()*0.4));
+                if(isCrit) dmg *= 2;
+                
+                this.enemy.hp -= dmg;
+                let log = `<div class="combat-log combat-player">你使用[${Game.equippedWeapon ? ItemDB[Game.equippedWeapon].name : '拳头'}]造成 <span class="${isCrit?'combat-crit':''}">${dmg}</span> 伤害</div>`;
+                textDisplay.innerHTML += log;
+                
+                if(this.enemy.hp <= 0) {
+                    addMoney(this.enemy.money); addCultivationXp(this.enemy.exp);
+                    textDisplay.innerHTML += `<div class="combat-log combat-win">胜利！获得 $${this.enemy.money}，经验 ${this.enemy.exp}</div>`;
+                    setTimeout(() => renderScene(currentHub), 1500);
+                } else {
+                    setTimeout(() => this.enemyTurn(), 600);
+                }
+                textDisplay.scrollTop = textDisplay.scrollHeight;
+            },
+            enemyTurn() {
+                let dmg = Math.floor(this.enemy.atk * (0.8 + Math.random()*0.4));
+                Game.hp -= dmg; updateUI();
+                textDisplay.innerHTML += `<div class="combat-log combat-enemy">${this.enemy.name} 反击造成 ${dmg} 伤害</div>`;
+                if(Game.hp <= 0) {
+                    textDisplay.innerHTML += `<div class="combat-log" style="color:red; font-weight:bold">你失去了意识...</div>`;
+                    setTimeout(() => { Game.hp = 10; Game.money = Math.floor(Game.money*0.8); renderScene(currentHub); showToast("战败，损失部分金钱"); }, 2000);
+                }
+                textDisplay.scrollTop = textDisplay.scrollHeight;
+            }
+        };
+
+        // --- 任务系统 ---
+        const MissionSystem = {
+            generate(faction) {
+                const types = [
+                    { name: "清理门户", desc: "清除敌对目标", diff: 1, money: 300, rep: 10 },
+                    { name: "物资护送", desc: "护送重要货物", diff: 2, money: 500, rep: 15 },
+                    { name: "高危暗杀", desc: "处理A级目标", diff: 3, money: 1000, rep: 30 }
+                ];
+                const t = types[Math.floor(Math.random()*types.length)];
+                const reward = Math.floor(t.money * (1 + Game.reputation[faction]/100));
+                Game.activeMissions.push({ id: Date.now(), faction, name: t.name, desc: t.desc, money: reward, repReward: t.rep, diff: t.diff });
+                showToast(`接取任务: ${t.name}`); saveGame();
+            }
+        };
+
+        // ==========================================
+        // 5. 沉浸式剧情与交互配置 (Story Nodes)
+        // ==========================================
+        const Story = {
+            // --- 开场过渡 ---
+            start_custom: { 
+                text: "...", 
+                choices: [{ text: "连接进入", next: "back_to_hub" }] 
+            },
+            
+            // ==========================================
+            // 区域 A：燕岭上层 (The Upper City)
+            // ==========================================
+            hub_yanling: {
+                text: "【当前位置：燕岭上层】\n\n这里是神州的云端，权贵与资本筑起的倒悬天宫。脚下的云层由全息投影和造雾机维持，空气中弥漫着昂贵的合成香氛。\n\n金碧辉煌的仿古建筑群悬浮在反重力基座上，巨大的流光灯球代替了日将月，这里没有黑夜，只有永恒的极乐。",
+                choices: [
+                    { text: "进入雷音证券大厦", next: "bld_leiyin" },
+                    { text: "前往燕岭皇家拍卖行", next: "bld_auction" },
+                    { text: "前往扶香酒楼", next: "loc_hotel" },
+                    { text: "乘坐磁浮快线去首阳区 (-20)", next: "travel_shouyang", cost: 20 }
+                ]
+            },
+            bld_leiyin: {
+                text: "【雷音证券大厅】\n\n走进大厅，首先映入眼帘的是一尊悬浮在百米高空的巨大全息电子金佛。佛像周身环绕着红绿色的股市K线图，代替了原本的佛光。\n\n空气中回荡着经过调音的电子诵经声：“涨跌随缘，割肉即空...” 身穿高定西装的操盘手们正对着虚空疯狂点击，每一秒都有亿万资金在此流动。",
+                choices: [
+                    { text: "申请商业委托 [需声望]", action: ()=>MissionSystem.generate('leiyin'), next: "back_to_hub", condition: (g)=>g.reputation.leiyin>=0 },
+                    { text: "兼职：枯燥的数据录入 (+$100)", action: ()=>{addMoney(100); updateStat('san',-5); showToast("精神变得麻木了...");}, next: "bld_leiyin" },
+                    { text: "离开大厅", next: "hub_yanling" }
+                ]
+            },
+            bld_auction: {
+                text: "【皇家拍卖行】\n\n这里的装修极为考究。展柜里陈列着各种旧时代的遗物：未经基因改造的天然植物、纯机械结构的古董手表、甚至是传说中的修仙者法器残片。\n\n每一个展品下方的数字，都足够下城区的一家人生活一辈子。",
+                choices: [
+                    { text: "参与竞拍：古老指环 (20000)", cost: 20000, action: ()=>addItem('artifact_ring'), next: "hub_yanling" },
+                    { text: "只是看看", next: "hub_yanling" }
+                ]
+            },
+            loc_hotel: {
+                text: "【扶香酒楼】\n\n“客官，里面请。” 门口的仿生人迎宾露出完美的微笑。\n酒楼内部，全息投影出的飞天舞女在花瓣雨中起舞。这里提供最顶级的精神享受，只要你付得起代价。",
+                choices: [
+                    { text: "至尊SPA服务 (-500)", cost: 500, action: ()=>{updateStat('hp',100); updateStat('san',100); showToast("身心焕然一新");}, next: "hub_yanling" },
+                    { text: "离开", next: "hub_yanling" }
+                ]
+            },
+
+            // ==========================================
+            // 区域 B：首阳中心区 (Mid Level)
+            // ==========================================
+            hub_shouyang: {
+                text: "【当前位置：首阳中心区】\n繁华的商业中心，巨大的雷音证券全息佛祖像悬浮在半空。街道干净整洁，巡逻的“鲤鱼”无人机在头顶游弋。",
+                choices: [
+                    { text: "前往山海公司办事处", next: "bld_shanhai" },
+                    { text: "金手指典当铺", next: "bld_pawn" },
+                    { text: "联合国特别行动安全屋", next: "bld_un", condition: (g)=>g.faction==='un'||g.background==='inspector' },
+                    { text: "坐缆车去燕岭上层 (-20)", next: "travel_yanling", cost: 20 },
+                    { text: "坐地铁去下城区 (-5)", next: "travel_under", cost: 5 }
+                ]
+            },
+            bld_shanhai: {
+                text: "【山海公司·科技部】\n\n大厅中央矗立着巨大的金属异兽雕像——《赛博山海经》系列的图腾。冷色调的灯光下，陈列着各类最先进的民用科技与安保装备。\n\n柜台后的销售员正用义眼扫描你的资产评估等级。",
+                choices: [
+                    { text: "购买装备：电击警棍 (500)", cost: 500, action: ()=>addItem('baton'), next: "bld_shanhai" },
+                    { text: "接取安保委托", action: ()=>MissionSystem.generate('shanhai'), next: "back_to_hub" },
+                    { text: "离开", next: "hub_shouyang" }
+                ]
+            },
+            bld_pawn: {
+                text: "【金手指典当铺】\n\n推开门，一股陈旧的烟草味扑面而来。柜台高得离谱，老板戴着单片机械眼镜，正用镊子夹起一块带血的芯片观察。\n\n“缺钱了？不管是拆下来的义体，还是不明来路的电子垃圾，我这都收。当然，回收价只有一半。想赎回去？那得加钱。”",
+                choices: [
+                    { text: "出售：断裂机械臂 (+150)", condition: (g)=>g.inventory.includes('mech_arm'), action: ()=>{Game.inventory.splice(Game.inventory.indexOf('mech_arm'),1); addMoney(150);}, next: "bld_pawn" },
+                    { text: "赎回最近当掉的物品", condition: (g)=>g.pawnedItems && g.pawnedItems.length>0, action: ()=>ShopSystem.redeem(0), next: "bld_pawn" },
+                    { text: "离开", next: "hub_shouyang" }
+                ]
+            },
+            bld_un: {
+                text: "【联合国安全屋】\n\n这是一间伪装成报刊亭的安全屋。虹膜扫描通过后，报刊架缓缓移开，露出了内部冰冷的武器库和战术终端。\n\n“欢迎归队，督察。这里有一些补给，总部也有新的任务下达。”",
+                choices: [
+                    { text: "领取补给 (军用兴奋剂)", action: ()=>addItem('military_stim'), next: "hub_shouyang" },
+                    { text: "接取督察任务", action: ()=>MissionSystem.generate('un'), next: "hub_shouyang" }
+                ]
+            },
+
+            // ==========================================
+            // 区域 C：下城区 (The Undercity)
+            // ==========================================
+            hub_under: {
+                text: "【当前位置：下城区】\n\n终年不见天日，上方漏下的酸雨混合着机油，在坑洼的地面汇聚成彩色的脏水。\n\n这里没有法律，只有帮派的规矩。闪烁的劣质霓虹灯牌下，蜷缩着瘾君子和非法改造者。空气中充斥着铁锈、血腥和麻辣香料的味道。这是被神州遗忘的角落，也是法外狂徒的乐园。",
+                choices: [
+                    { text: "进入龙门客栈", next: "loc_inn" },
+                    { text: "前往地下黑拳场", next: "loc_arena" },
+                    { text: "寻找黑市武器店", next: "bld_blackmarket" },
+                    { text: "偷渡去首阳区 (-10)", next: "travel_shouyang", cost: 10 }
+                ]
+            },
+            loc_inn: {
+                text: "【龙门客栈】\n\n下城区唯一的中立地带。这里三教九流混杂，不论你是被通缉的要犯，还是落魄的游侠，只要付得起钱，老板娘就能保你平安。\n\n大堂里吵吵嚷嚷，有人在吹嘘刚干的一票大买卖，有人在角落里低声交易情报。",
+                choices: [
+                    { text: "住宿休息 (-50)", cost: 50, action: ()=>{updateStat('hp',100);updateStat('san',100);}, next: "hub_under" },
+                    { text: "接取帮派委托", action: ()=>MissionSystem.generate('gang'), next: "hub_under" },
+                    { text: "离开", next: "hub_under" }
+                ]
+            },
+            loc_arena: {
+                text: "【地下黑拳场】\n\n巨大的铁笼被高压电网包围，空气中弥漫着浓烈的血腥味和汗臭味。观众的嘶吼声震耳欲聋，他们渴望看到鲜血，渴望看到金属撕裂肉体。\n\n在这里，生命是最廉价的筹码，但也是暴富的捷径。",
+                choices: [
+                    { text: "参加死斗 (难度:低)", action: ()=>CombatEngine.start("街头混混", 50, 8, 100, 20), next: "combat_mode" },
+                    { text: "挑战拳王 (难度:高)", action: ()=>CombatEngine.start("重装义体拳王", 200, 25, 1000, 100), next: "combat_mode" },
+                    { text: "离开这鬼地方", next: "hub_under" }
+                ]
+            },
+            bld_blackmarket: {
+                text: "【黑市武器店】\n\n隐藏在防空洞深处的店铺。老板是个只有半个脑袋的机械改造人，冷冷地看着你。\n\n身后的货架上摆满了在上面会被判重刑的违禁品：大威力动能武器、甚至是非法的源质结晶。\n“不问来路，不问去处。一手交钱，一手交货。”",
+                choices: [
+                    { text: "购买：动能手枪 (1200)", cost: 1200, action: ()=>addItem('pistol'), next: "bld_blackmarket" },
+                    { text: "购买：山海横刀 (3000)", cost: 3000, action: ()=>addItem('blade_shanhai'), next: "bld_blackmarket" },
+                    { text: "购买：源质结晶 (500)", cost: 500, action: ()=>addItem('origin_shard'), next: "bld_blackmarket" },
+                    { text: "离开", next: "hub_under" }
+                ]
+            },
+
+            // --- 交通跳转 ---
+            travel_shouyang: { 
+                text: "列车穿过层层叠叠的巨型建筑，窗外的景象从阴暗的钢铁丛林逐渐变为闪烁的霓虹都市。列车广播正在播报：“首阳中心区到了，请注意随身携带的义体零件。”", 
+                choices: [{text:"出站", next:"hub_shouyang", action:()=>setLocation("首阳中心")}] 
+            },
+            travel_yanling: { 
+                text: "私人缆车缓缓上升，穿过厚重的人造云层。阳光——真正的阳光，刺眼地洒进车厢。脚下的城市如同蝼蚁般渺小。", 
+                choices: [{text:"出站", next:"hub_yanling", action:()=>setLocation("燕岭上层")}] 
+            },
+            travel_under: { 
+                text: "重力电梯急速下降，失重感让你有些反胃。随着深度增加，空气逐渐浑浊，警报灯闪烁着红光，你正在坠入这个世界的底层。", 
+                choices: [{text:"出站", next:"hub_under", action:()=>setLocation("下城区")}] 
+            },
+            
+            // --- 通用返回 ---
+            back_to_hub: { 
+                text: "你整理了一下装备，回到了街道上。", 
+                choices: [{ text: "确定", next: "hub_shouyang" }] // 这里的 next 会被 renderScene 中的逻辑覆盖
+            }
+        };
+
+        function setLocation(loc) { Game.loc = loc; updateUI(); saveGame(); }
+        function addMoney(amount) { Game.money += amount; showToast(amount > 0 ? `获得 ${amount} 信用` : `花费 ${-amount} 信用`); updateUI(); saveGame(); if(amount<0) AudioEngine.playPay(); }
+
+        async function renderScene(key) {
+            
+            if(key === 'start_custom') {
+                Story.start_custom.text = `PRTS 档案覆写完成。\n\n欢迎回到现实，${Game.name}。\n检测到你的生命体征稳定。\n\n----------------\n身份档案：${CharData.backgrounds[Game.background].name}\n血脉读数：[${Game.bloodline === 'saint' ? '东方圣血' : Game.bloodline === 'demon' ? '西方魔血' : '凡人'}]\n----------------\n\n新历104年，神州大地。燕岭之上，皇权与资本筑起了倒悬的空中楼阁；下城区，霓虹与蒸汽掩盖着无数罪恶。\n各大势力正在暗中角力，请谨慎行事。`;
+            }
+
+            // 2. 战斗模式特殊渲染
+            if(key === 'combat_mode') {
+                choicesDisplay.innerHTML = `<button class="choice-btn" onclick="CombatEngine.playerAttack()">攻击 ATTACK</button>`;
+                textDisplay.innerHTML = `遭遇敌人: ${CombatEngine.enemy.name} (HP: ${CombatEngine.enemy.hp})`;
+                return;
+            }
+
+            // 3. 随机事件逻辑 (含 Bug 修复)
+            if(key.includes("hub_")) {
+                currentHub = key;
+                
+                // 只有当不是“安全模式”时，才进行随机判定
+                if(!isSafeMode && Math.random() < 0.2) { 
+                    const evts=[
+                        {t:"你在路边捡到了一个遗失的钱包。",c:[{text:"据为己有 (+200)",action:()=>addMoney(200),next:"back_to_hub"}]},
+                        {t:"几个街头混混拦住了你的去路。",c:[{text:"战斗！",action:()=>CombatEngine.start("混混",40,5,50,20),next:"combat_mode"},{text:"破财免灾 (-50)",action:()=>addMoney(-50),next:"back_to_hub"}]},
+                        {t:"你感到一阵灵感爆发。",c:[{text:"原地打坐 (+30经验)",action:()=>addCultivationXp(30),next:"back_to_hub"}]}
+                    ];
+                    const e = evts[Math.floor(Math.random()*evts.length)];
+                    
+                    // [修复关键点]：必须同时清空文本和选项，防止按钮重叠！
+                    textDisplay.innerHTML = ''; 
+                    choicesDisplay.innerHTML = ''; 
+                    
+                    await typeWriter(e.t); 
+                    renderChoices(e.c); 
+                    return; // 阻断后续正常场景的渲染
+                }
+                
+                // 只要进入过一次 Hub，安全模式就解除了，之后跑图会有风险
+                if(isSafeMode) isSafeMode = false;
+            }
+
+            // 4. 返回逻辑
+            if(key === "back_to_hub") { 
+                renderScene(currentHub); 
+                return; 
+            }
+            
+            // 5. 正常场景渲染
+            const scene = Story[key];
+            if(!scene) return console.error("Missing scene: " + key);
+
+            // [修复] 每次渲染前彻底清空旧内容
+            textDisplay.innerHTML = ''; 
+            choicesDisplay.innerHTML = '';
+            
+            await typeWriter(scene.text); 
+            renderChoices(scene.choices);
+        }
+
+        function renderChoices(choices) {
+            choices.forEach((c, i) => {
+                if (c.condition && !c.condition(Game)) return; 
+                const btn = document.createElement('button');
+                btn.className = 'choice-btn';
+                let canAfford = true;
+                if(c.cost && Game.money < c.cost) canAfford = false;
+                btn.innerText = c.text + (canAfford ? "" : " [余额不足]");
+                if(!canAfford) btn.classList.add('choice-disabled');
+                
+                btn.onclick = () => {
+                    if(!canAfford) return;
+                    if(c.cost) addMoney(-c.cost);
+                    if(c.action) c.action();
+                    AudioEngine.playClick();
+                    if(c.next) renderScene(c.next);
+                };
+                btn.style.opacity = 0; btn.style.transform = "translateY(10px)";
+                choicesDisplay.appendChild(btn);
+                setTimeout(() => { btn.style.opacity = 1; btn.style.transform = "translateY(0)"; }, i * 50);
+            });
+        }
+
+        function typeWriter(text) {
+            return new Promise(resolve => {
+                const cursor = document.createElement('span'); cursor.className = 'cursor';
+                textDisplay.appendChild(cursor);
+                let i = 0;
+                function step() {
+                    if (i < text.length) {
+                        const s = document.createElement('span'); s.textContent = text.charAt(i);
+                        cursor.before(s);
+                        if(i % 3 === 0) AudioEngine.playType();
+                        textDisplay.scrollTop = textDisplay.scrollHeight;
+                        i++; setTimeout(step, 10);
+                    } else { cursor.remove(); resolve(); }
+                } step();
+            });
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast'); t.innerText = msg;
+            t.style.transform = "translateX(0)"; setTimeout(() => t.style.transform = "translateX(120%)", 3000);
+        }
+        function initCharCreation() {
+            document.getElementById('char-creation-layer').style.display = 'flex';
+            document.getElementById('main-layer').style.display = 'none'; 
+            const bgSelect = document.getElementById('inp-bg'); bgSelect.innerHTML = "";
+            for(let key in CharData.backgrounds) {
+                let opt = document.createElement('option'); opt.value = key; opt.innerText = CharData.backgrounds[key].name; bgSelect.appendChild(opt);
+            }
+            updateFactionOptions(); AudioEngine.init();
+        }
+        function updateFactionOptions() {
+            const bgKey = document.getElementById('inp-bg').value;
+            const factionSelect = document.getElementById('inp-faction'); factionSelect.innerHTML = "";
+            CharData.backgrounds[bgKey].allowedFactions.forEach(fKey => {
+                let opt = document.createElement('option'); opt.value = fKey; opt.innerText = CharData.factions[fKey]; factionSelect.appendChild(opt);
+            });
+        }
+        function submitCharacter() {
+            const name = document.getElementById('inp-name').value || "无名氏";
+            Game.name = name;
+            Game.sex = document.getElementById('inp-sex').value;
+            Game.age = parseInt(document.getElementById('inp-age').value);
+            Game.personality = document.getElementById('inp-personality').value;
+            Game.background = document.getElementById('inp-bg').value;
+            Game.faction = document.getElementById('inp-faction').value;
+            Game.bloodline = document.getElementById('inp-blood').value;
+            Game.abilityName = document.getElementById('inp-ability').value || "无";
+            
+            if(Game.background === 'noble') { Game.money = 5000; Game.loc = "燕岭上层"; }
+            else if(Game.background === 'orphan') { Game.money = 100; Game.loc = "下城区"; }
+            else if(Game.background === 'inspector') { Game.money = 2000; Game.inventory.push('pistol'); Game.equippedWeapon='pistol'; Game.loc = "首阳中心"; }
+            else { Game.money = 800; Game.loc = "首阳中心"; }
+
+            saveGame();
+            document.getElementById('char-creation-layer').style.display = 'none';
+            enterGameWorld();
+        }
+        // 增加一个全局标记，防止刚进游戏就触发随机事件
+        let isSafeMode = false;
+
+        function enterGameWorld() {
+            document.getElementById('main-layer').style.display = 'flex';
+            document.getElementById('dialog-card').style.opacity = 1;
+            updateUI();
+            
+            // 初始化当前位置
+            if(Game.loc.includes("燕岭")) currentHub = 'hub_yanling';
+            else if(Game.loc.includes("下城")) currentHub = 'hub_under';
+            else currentHub = 'hub_shouyang';
+
+            // 开启安全模式：玩家刚进入世界的第一次跳转不会遇到随机事件
+            isSafeMode = true;
+
+            // 渲染开场
+            renderScene('start_custom');
+            startClock(); 
+            startCultivationLoop();
+        }
+
+        const AudioEngine = {
+            ctx: null, bgm: null,
+            init() { try { this.ctx = new (window.AudioContext||window.webkitAudioContext)(); this.startBGM(); } catch(e){} },
+            startBGM() {
+                const u = "https://m701.music.126.net/20251209000142/19882356db16af003a035a3bb243e303/jdymusic/obj/wo3DlMOGwrbDjj7DisKw/34566764345/adfd/3475/61d6/83d96809a2f866d5383868fb26a68a51.mp3";
+                this.bgm = new Audio(u); this.bgm.loop = true; this.bgm.volume = 0.4; this.bgm.play().catch(()=>{});
+            },
+            playType() { if(this.ctx){ const o=this.ctx.createOscillator();const g=this.ctx.createGain();o.type='square';o.frequency.value=800;g.gain.value=0.02;g.gain.exponentialRampToValueAtTime(0.001,this.ctx.currentTime+0.05);o.connect(g);g.connect(this.ctx.destination);o.start();o.stop(this.ctx.currentTime+0.05);} },
+            playClick() { if(this.ctx){ const o=this.ctx.createOscillator();const g=this.ctx.createGain();o.type='sine';o.frequency.value=1200;g.gain.value=0.05;g.gain.linearRampToValueAtTime(0,this.ctx.currentTime+0.1);o.connect(g);g.connect(this.ctx.destination);o.start();o.stop(this.ctx.currentTime+0.1);} },
+            playPay() { if(this.ctx){ const o=this.ctx.createOscillator();const g=this.ctx.createGain();o.type='sawtooth';o.frequency.setValueAtTime(600,this.ctx.currentTime);o.frequency.linearRampToValueAtTime(1000,this.ctx.currentTime+0.1);g.gain.value=0.05;g.gain.linearRampToValueAtTime(0,this.ctx.currentTime+0.2);o.connect(g);g.connect(this.ctx.destination);o.start();o.stop(this.ctx.currentTime+0.2);} }
+        };
+
+        // 核心优化：只在电脑上开启鼠标视差
+        if (window.innerWidth > 768) {
+            document.addEventListener('mousemove', (e) => {
+                const x = (window.innerWidth/2 - e.clientX) / 80;
+                const y = (window.innerHeight/2 - e.clientY) / 80;
+                document.getElementById('main-layer').style.transform = `rotateY(${x}deg) rotateX(${-y}deg)`;
+                document.getElementById('bg-grid').style.transform = `perspective(500px) rotateX(20deg) translate(${x*-2}px, ${y*-2}px) scale(1.5)`;
+            });
+        }
+
+    </script>
+</body>
+</html>
