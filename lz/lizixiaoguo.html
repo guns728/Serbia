@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Image Particle Visualizer</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050505;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #fff;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+
+        /* 控制面板样式 */
+        #ui-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 280px;
+            padding: 20px;
+            background: rgba(20, 20, 30, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            z-index: 100;
+            transition: opacity 0.3s;
+        }
+
+        h2 {
+            margin: 0 0 15px 0;
+            font-size: 1.2rem;
+            letter-spacing: 1px;
+            color: #00e5ff;
+            text-transform: uppercase;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            color: #aaa;
+            margin-bottom: 5px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            background: transparent;
+            -webkit-appearance: none;
+            margin: 5px 0;
+        }
+
+        input[type="range"]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            background: #333;
+            border-radius: 2px;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #00e5ff;
+            margin-top: -6px;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(0, 229, 255, 0.5);
+            transition: transform 0.1s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        /* 文件上传按钮美化 */
+        .file-upload {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+
+        .file-upload input[type="file"] {
+            display: none;
+        }
+
+        .file-upload-label {
+            display: block;
+            padding: 12px;
+            background: linear-gradient(45deg, #00e5ff, #2979ff);
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.9rem;
+            transition: filter 0.2s;
+        }
+
+        .file-upload-label:hover {
+            filter: brightness(1.1);
+        }
+
+        .tips {
+            font-size: 0.75rem;
+            color: #666;
+            margin-top: 10px;
+            line-height: 1.4;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: #00e5ff;
+            font-size: 1.5rem;
+            display: none;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-panel">
+        <h2>粒子透视生成器</h2>
+        
+        <div class="file-upload">
+            <label for="imageInput" class="file-upload-label">📁 上传图片</label>
+            <input type="file" id="imageInput" accept="image/*">
+        </div>
+
+        <div class="control-group">
+            <label>粒子密度 (采样率) <span id="val-density">2</span></label>
+            <input type="range" id="inp-density" min="1" max="6" step="1" value="2">
+        </div>
+
+        <div class="control-group">
+            <label>粒子大小 <span id="val-size">2.0</span></label>
+            <input type="range" id="inp-size" min="0.5" max="10.0" step="0.1" value="2.0">
+        </div>
+
+        <div class="control-group">
+            <label>3D 深度强度 <span id="val-depth">100</span></label>
+            <input type="range" id="inp-depth" min="0" max="500" step="10" value="100">
+        </div>
+
+        <div class="control-group">
+            <label>颜色阈值 (过滤黑色) <span id="val-threshold">10</span></label>
+            <input type="range" id="inp-threshold" min="0" max="100" step="1" value="10">
+        </div>
+
+        <div class="tips">
+            提示：<br>
+            • 鼠标左键拖动旋转<br>
+            • 滚轮缩放<br>
+            • 图片越亮的部分粒子越凸出<br>
+            • 密度数值越小，粒子越多(越卡)
+        </div>
+    </div>
+
+    <div id="loading">PROCESSING...</div>
+    <div id="canvas-container"></div>
+
+    <!-- 引入 Three.js -->
+    <script src="https://unpkg.com/three@0.132.2/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        // --- 变量定义 ---
+        let scene, camera, renderer, controls;
+        let particlesMesh;
+        let originalImageData = null; // 存储原始图片数据
+        let imageWidth = 0, imageHeight = 0;
+
+        // --- DOM 元素 ---
+        const container = document.getElementById('canvas-container');
+        const fileInput = document.getElementById('imageInput');
+        const loadingDiv = document.getElementById('loading');
+        
+        // 参数引用
+        const params = {
+            density: 2,    // 采样间隔 (越小粒子越多)
+            size: 2.0,     // 粒子大小
+            depth: 100,    // Z轴挤出强度
+            threshold: 10  // 剔除暗部的阈值
+        };
+
+        // --- 初始化 Three.js 场景 ---
+        function init() {
+            // 1. 场景
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x050505, 0.001); // 增加一点雾气增加深邃感
+
+            // 2. 相机
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.z = 500;
+            camera.position.y = 100;
+
+            // 3. 渲染器
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer.domElement);
+
+            // 4. 控制器 (鼠标交互)
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.rotateSpeed = 0.5;
+
+            // 5. 监听窗口大小变化
+            window.addEventListener('resize', onWindowResize);
+
+            // 6. 绑定UI事件
+            bindUI();
+
+            // 7. 开始循环
+            animate();
+            
+            // 加载一个默认的占位提示，或者只是保持黑屏等待上传
+            createPlaceholder();
+        }
+
+        // --- 创建初始占位效果 ---
+        function createPlaceholder() {
+            const geometry = new THREE.BufferGeometry();
+            const count = 1000;
+            const positions = new Float32Array(count * 3);
+            for(let i=0; i<count * 3; i++) {
+                positions[i] = (Math.random() - 0.5) * 600;
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const material = new THREE.PointsMaterial({ color: 0x333333, size: 2 });
+            particlesMesh = new THREE.Points(geometry, material);
+            scene.add(particlesMesh);
+        }
+
+        // --- 处理图片上传 ---
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            loadingDiv.style.display = 'block';
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    processImage(img);
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // --- 图片处理逻辑 ---
+        function processImage(img) {
+            // 创建一个临时的 Canvas 来读取像素数据
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // 限制最大分辨率以防崩溃，太大图片进行缩放
+            const maxWidth = 1000; 
+            let w = img.width;
+            let h = img.height;
+            
+            if (w > maxWidth) {
+                h = Math.round(h * (maxWidth / w));
+                w = maxWidth;
+            }
+
+            canvas.width = w;
+            canvas.height = h;
+            ctx.drawImage(img, 0, 0, w, h);
+
+            imageWidth = w;
+            imageHeight = h;
+            originalImageData = ctx.getImageData(0, 0, w, h); // 获取所有像素数据
+
+            generateParticles();
+            loadingDiv.style.display = 'none';
+        }
+
+        // --- 核心：生成粒子 ---
+        function generateParticles() {
+            if (!originalImageData) return;
+
+            // 移除旧的粒子系统
+            if (particlesMesh) {
+                scene.remove(particlesMesh);
+                particlesMesh.geometry.dispose();
+                particlesMesh.material.dispose();
+            }
+
+            const { data, width, height } = originalImageData;
+            const density = params.density;
+            const threshold = params.threshold;
+
+            const vertices = [];
+            const colors = [];
+
+            // 遍历像素
+            // 为了居中，我们需要计算 offset
+            const xOffset = width / 2;
+            const yOffset = height / 2;
+
+            for (let y = 0; y < height; y += density) {
+                for (let x = 0; x < width; x += density) {
+                    // 获取像素索引 (RGBA 4个值一组)
+                    const index = (y * width + x) * 4;
+                    const r = data[index];
+                    const g = data[index + 1];
+                    const b = data[index + 2];
+                    const a = data[index + 3];
+
+                    // 如果完全透明，或者亮度低于阈值，则跳过
+                    const brightness = (r + g + b) / 3;
+                    if (a === 0 || brightness < threshold) continue;
+
+                    // 计算位置
+                    // X: 水平位置 (减去偏移量以居中)
+                    // Y: 垂直位置 (注意 Canvas Y 轴向下，3D Y 轴向上，需要反转)
+                    // Z: 深度 (基于亮度，越亮越靠前)
+                    const pX = x - xOffset;
+                    const pY = -(y - yOffset); // 反转Y轴
+                    const pZ = (brightness / 255) * params.depth; // 映射深度
+
+                    vertices.push(pX, pY, pZ);
+
+                    // 颜色归一化 (0.0 - 1.0)
+                    colors.push(r / 255, g / 255, b / 255);
+                }
+            }
+
+            // 创建 BufferGeometry
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            // 创建材质
+            // vertexColors: true 使得每个粒子使用我们传入的 color 数组
+            const material = new THREE.PointsMaterial({
+                size: params.size,
+                vertexColors: true,
+                sizeAttenuation: true, // 距离越远看起来越小
+                transparent: true,
+                opacity: 0.9
+            });
+
+            particlesMesh = new THREE.Points(geometry, material);
+            
+            // 稍微旋转一下，让3D效果更明显
+            particlesMesh.rotation.x = -0.1; 
+            particlesMesh.rotation.y = 0.1;
+
+            scene.add(particlesMesh);
+
+            // 调整相机位置以适应图片大小
+            const maxDim = Math.max(width, height);
+            camera.position.z = maxDim * 1.5; 
+        }
+
+        // --- 绑定 UI 事件 ---
+        function bindUI() {
+            // 密度
+            const inpDensity = document.getElementById('inp-density');
+            inpDensity.addEventListener('input', (e) => {
+                params.density = parseInt(e.target.value);
+                document.getElementById('val-density').innerText = params.density;
+            });
+            inpDensity.addEventListener('change', generateParticles); // 仅在松开时重新生成，避免卡顿
+
+            // 大小
+            const inpSize = document.getElementById('inp-size');
+            inpSize.addEventListener('input', (e) => {
+                params.size = parseFloat(e.target.value);
+                document.getElementById('val-size').innerText = params.size.toFixed(1);
+                // 大小改变不需要重构几何体，只需更新材质
+                if(particlesMesh) particlesMesh.material.size = params.size;
+            });
+
+            // 深度
+            const inpDepth = document.getElementById('inp-depth');
+            inpDepth.addEventListener('input', (e) => {
+                params.depth = parseInt(e.target.value);
+                document.getElementById('val-depth').innerText = params.depth;
+            });
+            inpDepth.addEventListener('change', generateParticles);
+
+            // 阈值
+            const inpThreshold = document.getElementById('inp-threshold');
+            inpThreshold.addEventListener('input', (e) => {
+                params.threshold = parseInt(e.target.value);
+                document.getElementById('val-threshold').innerText = params.threshold;
+            });
+            inpThreshold.addEventListener('change', generateParticles);
+        }
+
+        // --- 窗口大小调整 ---
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- 动画循环 ---
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update(); // 必须调用，因为开启了 damping
+            
+            // 给粒子一个极其缓慢的自转，增加动态感
+            if (particlesMesh && !originalImageData) {
+                // 仅在演示模式下自转
+                particlesMesh.rotation.y += 0.001;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // 启动
+        init();
+
+    </script>
+</body>
+</html>
